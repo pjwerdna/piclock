@@ -176,6 +176,7 @@ class AlarmPi:
       #~ global lancheck
       global iplist
       log.info("Starting up AlarmPi")
+      log.info("cwd=%s", os.getcwd())
 
       iplist = []
       NetworksIP = self.GetIPForNetwork("eth0")

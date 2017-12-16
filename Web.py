@@ -59,7 +59,7 @@ else:
     session = web.config._session
 
 webcredential_path = None
-home_dir = os.path.expanduser('~')
+home_dir = os.getcwd() #os.path.expanduser('~')
 #~ log.info("home_dir = %s", home_dir)
 credential_dir = os.path.join(home_dir, '.credentials')
 if not os.path.exists(credential_dir):
@@ -77,9 +77,9 @@ class PasswordHash(object):
         return self.saltedpw == sha1(password_ + self.salt).hexdigest()
 
 
-render = web.template.render('web/', cache=False, base='layout')
-render_nomenu = web.template.render('web/', cache=False, base='layout_nomenu')
-render_json = web.template.render('web/', cache=False)
+render = web.template.render('/home/pi/piclock/web/', cache=False, base='layout')
+render_nomenu = web.template.render('/home/pi/piclock/web/', cache=False, base='layout_nomenu')
+render_json = web.template.render('/home/pi/piclock/web/', cache=False)
 
 #~ settings = Settings.Settings()
 
@@ -189,7 +189,7 @@ class static:
       else:
         try:
             file = file.replace("../","")
-            f = open('/home/pi/static/'+file, 'r')
+            f = open('/home/pi/piclock/static/'+file, 'r')
             return f.read()
         except Exception:
             log.exception("Failed open file %s", '/home/pi/static/'+file)
@@ -1016,7 +1016,7 @@ class WebApplication(threading.Thread):
       #~ global session
       log.debug("Starting up web server")
 
-      home_dir = os.path.expanduser('~')
+      home_dir = os.getcwd() #os.path.expanduser('~')
 
       #  openssl req -new -x509 -keyout serverssl.pem -out serverssl.pem -days 365 -nodes
       CherryPyWSGIServer.ssl_certificate = os.path.join(home_dir, "serverssl.pem")
