@@ -1,0 +1,5 @@
+CLIENT_ID=' 870909051491-agtlopaedjgqbj2iopfrv4hk9lk24d3h.apps.googleusercontent.com'
+CLIENT_SECRET='Bhl3g3zfPlY4X-ZYcESzvXqD'
+DEVELOPER_KEY='AIzaSyAiOUP9M9b2bOKBmfYYt2Tihaz7AcXLDPg'
+CALENDAR='a.j.pullan@gmail.com'
+WUG_KEY='69f8110bdca45316'

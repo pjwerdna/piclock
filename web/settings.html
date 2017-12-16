@@ -1,0 +1,30 @@
+$def with (form)
+<form name="main" method="post">
+$if not form.valid: <p class="error">Form wasn't valid</p>
+
+<style>
+table {
+   border-collapse: collapse;
+   border: 1px solid black;
+   border-style:none;
+   background-color:white;
+   color:black;
+}
+td {
+    padding:2px
+}
+
+
+</style>
+<Table class="main" style="border-spacing:10px;margin-left:auto;margin-right:auto;width:344px">
+<TR>
+ <TH style="text-align:center;color:black" colspan="3">Settings</TH>
+</TR>
+<TR>
+ <TD>$:form.render()</TD>
+</TR>
+<TR style="text-align:right">
+ <TD><BR><input value="Change Settings" type="submit" /></TD>
+</TR>
+</Table>
+</form>

@@ -1,0 +1,225 @@
+$def with (selector, selectorAlarmStation, hoursselector, minsselector)
+<script language="javascript">
+function PlayControl(comand, value, value2) {
+
+    cmdimage = new Image();
+    //~ url=unescape(window.location.href);
+    path = location.href.substring(0,location.href.indexOf("/",10));
+
+    //~ cmdimage.onreload=new Function('window.location.replace( "'+path+'" );');
+    //~ cmdimage.src = "/api?action=" + comand + "&station=" + document.getElementById("alarm_station").value;
+
+
+    //~ window.alert(comand + " = " + value);
+    var xmlhttp = new XMLHttpRequest();
+    var url = path + "/api?action=" + comand + "&value=" + value;
+    if (value2 != undefined) {
+        url = url + "&extravalue=" + value2
+    }
+
+    xmlhttp.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+            var myarr = JSON.parse(this.responseText);
+
+            StatusUpdate(myarr);
+        }
+    }
+
+    xmlhttp.open("GET", url, true);
+    xmlhttp.send();
+    //~ window.alert(document.getElementById("alarm_station").value);
+
+    return false;
+
+};
+
+function StatusUpdate(myarr) {
+
+    //~ window.alert(myarr.AlarmState)
+
+    document.getElementById("Volume").innerHTML = myarr.Volume+ "%";
+    document.getElementById("Volumebar").style.height = myarr.Volume + "px";
+    document.getElementById("Brightness").innerHTML = (100-myarr.Brightness);
+    document.getElementById("Brightnessbar").style.width = (100-myarr.Brightness) + "px";
+    //~ document.getElementById("AlarmStatus").innerHTML = myarr.AlarmState;
+
+    if (myarr.Status == "Paused") {
+        document.getElementById("PlayerStation").innerHTML = myarr.Station + "<BR>Paused";
+    } else {
+        document.getElementById("PlayerStation").innerHTML = myarr.Station;
+    }
+
+    if ((myarr.AlarmState == "0") || (myarr.AlarmState == "2")) {
+        document.getElementById('SetAlarm').style.display = "table";
+        document.getElementById('ShowAlarm').style.display = "none";
+
+        document.getElementById('alarm_station').value = myarr.AlarmStation;
+        document.getElementById('selecthours').value = myarr.AlarmTIme.substring(0,2);
+        document.getElementById('selectminutes').value = myarr.AlarmTIme.substring(3,5);
+
+        document.getElementById('NextAlarmType').innerHTML = myarr.NextAlarmType
+
+    } else {
+        document.getElementById('SetAlarm').style.display = "none";
+        document.getElementById('ShowAlarm').style.display = "table";
+    }
+
+
+
+
+};
+
+</script>
+<noscript>Your browser does not support JavaScript!</noscript>
+<style>
+
+table.brightnesstable {
+    border-style: none;
+
+}
+
+table.brightnes {
+    border-style: none;
+    border: 1px solid black;
+
+}
+
+table.volume {
+   border-collapse: collapse;
+   border: 1px solid black;
+   margin-left: auto;margin-right: auto;
+}
+
+
+th, td {
+   bxorder: 1px solid black;
+}
+
+.centercell {
+    display:table-cell;
+    text-align:center;
+}
+
+.centerrow {
+    display:table-row;
+    text-align:center;
+}
+
+.imagebutton {
+    vertical-align:middle;
+}
+
+</style>
+<table class="main" style="margin-left: auto;margin-right: auto;width:344px;background-color:white;color:black" >
+    <TR><TH style="color:Black" colspan=3>PiClock Radio</TH></TR>
+    <TR><TD style="width:90px;height:40px;text-align:center">Playing</TD>
+    <TD id="PlayerStation" style="width:150px;height:50px;;text-align:center">&nbsp;</TD>
+    <TD style="text-align:center;padding:2px" rowspan=3 >
+    <img alt="VOL +" onclick="PlayControl('volumechange',+1)" src="static/ic_volume_up_black_48dp.png" value="Volume Up" />
+    <table class="volume" style="width:20px;height:104px">
+        <TR><TD style="vertical-align:bottom">
+        <table class="volume" id="Volumebar" style="width:16px;background:#0000FF">
+            <TR><TD>
+
+            </TD></TR>
+        </Table>
+        </TD></TR>
+    </table>
+    <img alt="VOL -"  onclick="PlayControl('volumechange',-1)" src="static/ic_volume_down_black_48dp.png" value="Volume Down" />
+    <BR><div id="Volume" ></div>
+
+    </TD></TR>
+
+    <TR><TD colspan=2 style="text-align:center">
+    $:selector
+    <BR>
+    <img alt="Stop"  onclick="PlayControl(this.id,0)" src="static/ic_stop_black_48dp.png" id="stop" />
+    <img alt="Play"  onclick="PlayControl(this.id,document.getElementById('current_station').value)" src="static/ic_play_arrow_black_48dp.png" id="play" />
+    <img alt="Pause" onclick="PlayControl(this.id,0)" src="static/ic_pause_black_48dp.png" id="pause" />
+    </TD></TR>
+    <TR><TD colspan=2 style="text-align:center" style="height:50px">Brightness Adjustment<BR>
+
+    <table class="brightnesstable" style="width:100%;border-style:1px solid black">
+        <TR style="border-style:none">
+         <TD style="text-align:bottom;border-style:1px solid black;width:50px" rowspan=3>
+          <img alt="Brightness -" onclick="PlayControl(this.id,+2)" src="static/ic_brightness_low_black_48dp.png" id="brightnesschange" />
+         </TD>
+         <TD style="border-style:none"><!-- empty -->
+         </TD>
+         <TD style="text-align:bottom;border-style:1px solid black;width:50px" rowspan=3>
+          <img alt="Brightness +" onclick="PlayControl(this.id,-2)" src="static/ic_brightness_high_black_48dp.png" id="brightnesschange" />
+         </TD>
+        </TR>
+        <TR><TD style="width:108px;height:20px;border: 1px solid black;padding:1px">
+          <table style="border-collapse: collapse;padding:0px"><tr><TD>
+            <table class="brightnes" id="Brightnessbar" style="height:16px;width=100%;empty-cells: hide;border-collapse: collapse;;border-style:none;padding:0px">
+                <TR><TD>
+                <!-- table class="xbrightnes" id="xBrightnessbar" style="height:16px;border:none">
+                    <TR><TD></TD></TR>
+                </Table -->
+                </TD></TR>
+            </Table>
+            </td><td>
+            <table class="brightnes" id="Brightnessindicator" style="height:16px;border:none;background:#0000FF">
+            <TR><TD></TD></TR>
+            </Table>
+           </td></tr></table>
+        </TD></TR>
+        <TR><TD style="border-style:none"></TD></TR>
+    </table>
+    <span style="display:none" id="Brightness">&nbsp;</span>
+    </TD></TR>
+<TR><TD colspan="4" style="padding:1px">
+<table class="main" style="margin-left:auto;margin-right:auto;width:100%;background-color:white;color:black" >
+ <TR style="text-align:center;vertical-align:middle">
+  <TD style="text-align:center;vertical-align:middle;display:table-cell">
+    <DIV id="SetAlarm" style="display:table;width:100%">
+        <div class="centerrow" >
+
+            <div class="centercell" >Next Alarm</DIV>
+            <div class="centercell" ></DIV>
+            <DIV class="centercell" id="NextAlarmType">Automatic</DIV>
+        </DIV>
+        <DIV class="centerrow" >
+
+            <div class="centercell" >
+             $:selectorAlarmStation
+            </div>
+            <div class="centercell" >
+            at
+            </DIV>
+            <div class="centercell" >
+             $:hoursselector
+             $:minsselector
+             <img class="imagebutton" alt="Set Alarm Station" style="width:24px;height:24px"
+              onclick="PlayControl(this.id,document.getElementById('alarm_station').value, document.getElementById('selecthours').value+document.getElementById('selectminutes').value)"
+              src="static/ic_update_black_48dp.png" id="SetAlarmInfo" />
+            </div>
+         </DIV>
+    </div>
+
+    <div id="ShowAlarm" style="display:none;text-align:center;width:100%">
+        <div style="display:table-row;text-align:center">
+            <div style="text-align:center;display:table-cell">
+              <img class="imagebutton" alt="Cancel" style="width:48px;height:48px"
+               onclick="PlayControl(this.id)"
+               src="static/ic_alarm_off_black_48dp.png" id="cancelalarm" />
+            </div>
+            <div style="text-align:center;display:table-cell">Alarm Sounding</div>
+            <div style="text-align:center;display:table-cell">
+              <img class="imagebutton" alt="Alarm Snooze" style="width:48px;height:48px"
+               onclick="PlayControl(this.id)"
+               src="static/ic_snooze_black_48dp.png" id="snoozealarm" />
+            </div>
+        </div>
+    </DIV>
+  </TD>
+ </TR>
+</table>
+</TD></TR>
+</table>
+
+<script language="javascript">
+// fillin whats happending
+PlayControl('status')
+</script>
