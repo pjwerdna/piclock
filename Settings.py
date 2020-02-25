@@ -16,8 +16,8 @@ lock = threading.Lock()
 # Ones From http://www.suppertime.co.uk/blogmywiki/2015/04/updated-list-of-bbc-network-radio-urls/
 # dont work :(
 STATIONS = [
-   {'name':'BBC Radio 1', 'url':'http://www.listenlive.eu/bbcradio1.m3u'},
-   {'name':'BBC Radio 2', 'url':'http://www.listenlive.eu/bbcradio2.m3u'},
+   {'name':'BBC Radio 1', 'url':'http://open.live.bbc.co.uk/mediaselector/5/select/version/2.0/mediaset/http-icy-mp3-a/vpid/bbc_radio_one/format/pls.pls'},
+   {'name':'BBC Radio 2', 'url':'http://open.live.bbc.co.uk/mediaselector/5/select/version/2.0/mediaset/http-icy-mp3-a/vpid/bbc_radio_two/format/pls.pls'},
    {'name':'BBC Radio London', 'url':'http://www.radiofeeds.co.uk/bbclondon.pls'},
    {'name':'Capital FM', 'url':'http://media-ice.musicradio.com/CapitalMP3.m3u'},
    {'name':'Kerrang Radio', 'url':'http://tx.whatson.com/icecast.php?i=kerrang.mp3.m3u'},

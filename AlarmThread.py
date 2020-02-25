@@ -159,6 +159,8 @@ class AlarmThread(threading.Thread):
       event = datetime.datetime.now() #pytz.timezone('Europe/London'))
 
       HolidayCommingUp = False
+      HolidayModeCommingUp = False
+
 
       try:
          # Next event from Calendar
@@ -174,6 +176,9 @@ class AlarmThread(threading.Thread):
          # if next event summary is holiday
          if (eventsummary.lower() == "holiday"):
              HolidayCommingUp = True
+         if (eventsummary.lower() == "holiday mode"):
+             HolidayModeCommingUp = True
+             HolidayCommingUp = True
 
       except Exception as e:
          log.exception("Could not obtain Holiday information")
@@ -188,6 +193,9 @@ class AlarmThread(threading.Thread):
          weekday = datetime.datetime.weekday(event)
 
          if (HolidayCommingUp == True) and (eventTime.date() == event.date()):
+             if (HolidayModeCommingUp == True):
+                log.info("Holiday mode enabled, won't auto-set alarm as requested")
+                return
              log.debug("Holiday comming up, using default wake time")
              default_wake =self.settings.get("default_wake")
              alarmtime = [default_wake[:2], default_wake[2:]]
@@ -311,8 +319,9 @@ class AlarmThread(threading.Thread):
       message = ""
 
       if self.nextAlarm is not None:
+         nextAlarmCopy = self.nextAlarm
          #now = datetime.datetime.now(pytz.timezone('Europe/London'))
-         diff = self.nextAlarm - datetime.datetime.now() #pytz.timezone('Europe/London')) #now
+         diff = nextAlarmCopy - datetime.datetime.now() #pytz.timezone('Europe/London')) #now
          if diff.days < 1:
             if self.snoozing:
                message+="Snoozing"
@@ -332,7 +341,7 @@ class AlarmThread(threading.Thread):
                   message+=" until "
                else:
                   message+=" at "
-               message+=self.nextAlarm.strftime("%H:%M")
+               message+=nextAlarmCopy.strftime("%H:%M")
       else:
           #No Alarm Set. A space ensures any old message gets removed
           message+=" "

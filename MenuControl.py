@@ -204,9 +204,9 @@ class MenuControl(threading.Thread):
             return "Cancel"
 
         # ways out, exit or restart
-        elif (SelectedItem == "Stop Clock"): # and (Title == "Confirm Exit"):
+        elif (SelectedItem == "Exit Clock"): # and (Title == "Confirm Exit"):
                 return "Exit"
-        elif (SelectedItem == "Restart Clock"): # and (Title == "Confirm Exit"):
+        elif (SelectedItem == "Exit & Restart Clock"): # and (Title == "Confirm Exit"):
                 #~ self.settings.set("quiet_reboot","1")
                 #~ subprocess.Popen('/etc/init.d/piclock restart', shell=True)
                 self.MainLoop.stop(3)
@@ -222,7 +222,7 @@ class MenuControl(threading.Thread):
                 #~ return "Exit"
 
             # Return the results incase it needs passing right back to the top level
-            menu_ConfirmExit = ["Stop Clock", "Reboot Clock", "Restart Clock", "Shutdown Clock", "Cancel" ]
+            menu_ConfirmExit = ["Exit Clock", "Exit & Restart Clock", "Reboot Clock", "Shutdown Clock", "Cancel" ]
             return self.DisplaySubMenu(menu_ConfirmExit, "Confirm Shutdown")
 
         elif (SelectedItem == "Holiday Mode"):

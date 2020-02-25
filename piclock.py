@@ -87,6 +87,7 @@ import MediaPlayer
 #import AlarmGatherer
 import AlarmThread
 from Web import WebApplication
+from Web import WebApplicationHTTP
 from Weather import WeatherFetcher
 import subprocess
 
@@ -106,19 +107,19 @@ class AlarmPi:
       self.Menus.ExitAllMenus = True
 
       self.rebootAction = doreboot
-      if (doreboot == 1):
+      if (doreboot == 1): # reboot
           self.rebootnow = True
           self.lcd.setMessage("Rebooting",True)
           #~ print "Rebooting"
           self.settings.set("quiet_reboot","1")
 
-      elif (doreboot == 2) or (doreboot == True):
+      elif (doreboot == 2) or (doreboot == True): # Shutdown
           self.shutdownnow = True
           self.lcd.setMessage("Shutting Down",True)
           #~ print "Shutting down"
           self.settings.set("quiet_reboot","0")
 
-      elif (doreboot == 3):
+      elif (doreboot == 3): # restart app
           self.lcd.setMessage("Restarting Clock",True)
           self.settings.set("quiet_reboot","1")
           subprocess.Popen('/etc/init.d/piclock restart', shell=True)
@@ -244,7 +245,12 @@ class AlarmPi:
       log.info("Starting alarm control")
       self.alarm.start()
 
-      log.info("Starting web application")
+      log.info("Starting HTTP web application")
+      webhttp = WebApplicationHTTP(self.alarm, self.settings, media, self, self.bright, self.lcd)
+      webhttp.setDaemon(True)
+      webhttp.start()
+
+      log.info("Starting HTTPS web application")
       web = WebApplication(self.alarm, self.settings, media, self, self.bright)
       web.setDaemon(True)
       web.start()
@@ -292,6 +298,7 @@ class AlarmPi:
 
       log.info("Stopping all services")
       web.stop()
+      webhttp.stop()
       # alarm.stop()
       self.lcd.stop()
       self.bright.stop()

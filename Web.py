@@ -26,6 +26,17 @@ urls = (
     '/api/(.+)', 'api',
     '/player','player',
     '/static/','error',
+#    '/fsapi/','fsapi',
+#    '/fsapi/(.+)','fsapi',
+#    '/fsapi/(.+)/(.+)','fsapi',
+    #~ '/(images|js)/(.+)', 'static',
+)
+
+urlshttp = (
+    '/device','device',
+    '/fsapi/','fsapi',
+    '/fsapi/(.+)','fsapi',
+    '/fsapi/(.+)/(.+)','fsapi',
     #~ '/(images|js)/(.+)', 'static',
 )
 
@@ -34,6 +45,9 @@ global users
 global alarm, brightnessthread
 global settings
 global session
+
+global AccessPin
+AccessPin="123456"
 
 # Player status as text
 PlayerStatus = {0:"Stopped", 1:"Playing", 2:"Paused" }
@@ -48,6 +62,7 @@ alarm = None
 log = logging.getLogger('root')
 
 app = web.application(urls, globals())
+apphttp = web.application(urlshttp, globals())
 #~ app.run(WebLog)
 
 if web.config.get('_session') is None:
@@ -96,6 +111,8 @@ for stationname in Settings.STATIONS:
 global iplist
 iplist = []
 
+global Poweredon
+Poweredon = False
 
 def GetIPForNetwork(Network): # find the IP of the given network
     ipv4 = os.popen('ip addr show ' + Network).read()
@@ -423,13 +440,13 @@ class set:
       log.debug("Processing web request for settings changes")
 
       #if (PasswordHash(form['oldpassword'].value) == users[session.user]) and (form['newpassword'].value != ""):
-      if (users[session.user].check_password(form['oldpassword'].value)) and (form['newpassword'].value != ""):
-         changes.append("Changed user password")
-         users[session.user] = PasswordHash(form['newpassword'].value)
-         try:
+      try:
+        if (users[session.user].check_password(form['oldpassword'].value)) and (form['newpassword'].value != ""):
+            changes.append("Changed user password")
+            users[session.user] = PasswordHash(form['newpassword'].value)
             pickle.dump(users, open(webcredential_path, "wb" ) )
-         except:
-            log.debug("couldnt save user details")
+      except:
+        log.debug("couldnt save user details")
 
       #~ if form['home'].value != settings.get('location_home'):
          #~ changes.append("Set Home location to %s" % (form['home'].value))
@@ -981,6 +998,337 @@ class api: # returns json describing the Player State
         web.header('Content-Type','application/json')
         return json.dumps(Statusjson)
 
+class device:
+    def GET(self):
+      returnValue = "<c8_array>PIClock</c8_array>"
+      NetworksIP = GetIPForNetwork("eth0")
+
+      if (NetworksIP == ""):
+          NetworksIP = GetIPForNetwork("wlan0")
+
+#        return "<fsapiResponse><status>FS_OK</status>" + str(returnValue) + "</fsapiResponse>"
+      return "<?xml version=\"1.0\"?>\n<netremote>\n<friendlyName>PIClock</friendlyName>\n<version>1.0</version>\n<webfsapi>http://" + NetworksIP + ":80/fsapi</webfsapi>\n</netremote>"
+
+class fsapi: # returns FS API describing the Player State
+    def GET(self,operation="", ApiAction=""):
+        #,ApiAction
+        global alarm, StationList, iplist, Poweredon
+        returnValue = 0
+        RequesterIP = web.ctx['ip']
+        maxItems = 1
+        #~ log.info("%s=%s" %(RequesterIP, iplist[0]))
+        #~ if (iplist.index(RequesterIP) == -1 ):
+        user_data = web.input(pin="",sid="",value="-1",maxItems="1")
+        Fsapipin = user_data.pin
+        FsapiValue = user_data.value
+        if operation[0:4] == "GET/":
+            ApiAction = operation[4:]
+            operation = "GET"
+        elif operation[0:4] == "SET/":
+            ApiAction = operation[4:]
+            operation = "SET"
+        elif operation[0:14] == "LIST_GET_NEXT/":
+            ApiAction = operation[14:]
+            operation = "LIST_GET_NEXT"
+
+        #log.debug("api %s", ApiAction)
+        log.debug("DO \"%s\" %s", operation, ApiAction)
+        #log.debug("Pin %s", Fsapipin)
+
+        if (RequesterIP not in iplist) and (Fsapipin != AccessPin):
+            if (userLoggedout(session)) :
+                log.info("Not logged in")
+                return ("")
+
+
+
+        #~ log.debug("API Action = %s " , ApiAction)
+
+        if media.playerActive():
+            iStatus = 1
+            if media.playerPaused():
+                iStatus = 2
+        else:
+            iStatus = 0
+
+        if ( operation == "CREATE_SESSION"):
+            returnValue = "<sessionId>123456789</sessionId>"
+            #returnValue = "<c8_array>123456789</c8_array>"
+        elif ( operation == "DELETE_SESSION"):
+            returnValue = "<value>0</value>"
+            #returnValue = "<c8_array>123456789</c8_array>"
+        elif   (ApiAction == "play"): # or (ApiAction == "play" and ApiAction == "radio"):
+            #~ StationList = []
+            #~ for stationname in Settings.STATIONS:
+                #~ StationList.append(stationname['name'])
+
+            newstation = StationList[StationList.index(ApiValue)]
+            if (iStatus == 0) or (media.playerActiveStation() <> newstation):
+                # Need to stop the alarm or it will retrigger
+                if alarm.isAlarmSounding():
+                    alarm.stopAlarm()
+                elif (iStatus == 1): # if playing something, but not an alarm
+                    media.stopPlayer()
+
+                #~ log.info("Playing : " + newstation)
+                media.playStation(StationList.index(ApiValue))
+
+        elif ApiAction == "stop":
+            if (iStatus == 1) or (iStatus == 2):
+                media.stopPlayer()
+
+        elif ApiAction == "netRemote.sys.info.friendlyName":
+            if (operation == "LIST_GET_NEXT") :
+                returnValue = "<value><c8_array>PiClock</c8_array></value>"
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+        elif ApiAction == "netRemote.play.info.name":
+            if (operation == "GET") :
+                returnValue = "<value><c8_array>PiClock</c8_array></value>"
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+        elif ApiAction == "netRemote.play.info.text":
+            if (operation == "GET") :
+                returnValue = "<value><c8_array>" + tft.ExtraMessage + "</c8_array></value>"
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+        elif ApiAction == "netRemote.nav.presets/-1":
+            if (operation == "LIST_GET_NEXT") :
+                keyno = 1
+                returnValue = ""
+                for stationname in Settings.STATIONS:
+                    returnValue += "<item key=\"" + str(keyno) + "\">\n"
+                    returnValue += "<field name=\"name\"><c8_array>" + stationname['name'] + "</c8_array></field>\n"
+                    returnValue += "</item>\n"
+                    keyno += 1
+                    #~ log.debug("preset %d %s", keyno, stationname['name'])
+                returnValue += "<listend/>\n"
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+        elif ApiAction == "netRemote.nav.action.selectPreset":
+            if (operation == "SET") :
+                newstation = StationList[int(FsapiValue)-1]
+                if (iStatus == 0) or (media.playerActiveStation() <> newstation):
+                    # Need to stop the alarm or it will retrigger
+                    if alarm.isAlarmSounding():
+                        alarm.stopAlarm()
+                    elif (iStatus == 1): # if playing something, but not an alarm
+                        media.stopPlayer()
+
+                    log.info("Playing : " + newstation)
+                    log.info("no %d" , int(FsapiValue))
+                    media.playStation(int(FsapiValue)-1)
+
+                returnValue = "<value><c8_array>" + newstation + "</c8_array></value>"
+            elif (operation == "GET") :
+                returnValue = "<value><c8_array>" + str(int(media.playerActiveStationNo())+1) + "</c8_array></value>"
+            else:
+                returnValue = "<value><c8_array>0</c8_array></value>"
+
+        elif ApiAction == "netRemote.nav.state":
+            if (operation == "GET") :
+                returnValue = "<u8>1</u8>"
+            if (operation == "SET") :
+                # NOT YET Implimented
+                returnValue = "<u8>1</u8>"
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+
+        elif ApiAction == "netRemote.sys.caps.validModes/-1":
+            if (operation == "LIST_GET_NEXT") :
+                returnValue = "<item key=\"0\">\n"
+                returnValue += "<field name=\"id\"><c8_array>IR</c8_array></field>\n"
+                returnValue += "<field name=\"selectable\"><u8>1</u8></field>\n"
+                returnValue += "<field name=\"label\"><c8_array>Internet Radio</c8_array></field>\n"
+                returnValue += "<field name=\"streamable\"><u8>1</u8></field>\n"
+                returnValue += "<field name=\"modetype\"><u8>0</u8></field>\n"
+                returnValue += "</item>\n"
+                returnValue += "<listend/>\n"
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+        elif ApiAction == "netRemote.sys.mode":
+            if (operation == "GET") :
+                returnValue = "<value><u32>0</u32></value>"
+            else:
+                returnValue = "<value><u32>0</u32></value>"
+
+
+        elif ApiAction == "netRemote.sys.caps.eqPresets/-1":
+            if (operation == "LIST_GET_NEXT") :
+                returnValue = "<item key=\"0\">\n"
+                returnValue += "<field name=\"label\"><c8_array>Normal</c8_array></field>\n"
+                returnValue += "</item>\n"
+                returnValue += "<listend/>\n"
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+        elif ApiAction == "netRemote.sys.audio.eqPreset":
+            if (operation == "GET") :
+                returnValue = "<item key=\"0\">\n"
+                returnValue += "<value><u32>0</u32></value>"
+                returnValue += "</item>\n"
+                returnValue += "<listend/>\n"
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+        elif ApiAction == "netRemote.sys.audio.mute":
+            if (operation == "SET") :
+                if (int(FsapiValue) == 1):
+                    if (iStatus <> 0):
+                        log.info("Pausing")
+                        media.pausePlayer()
+                    returnValue = "<value><u8>1</u8></value>"
+                else:
+                    if (iStatus <> 0):
+                        log.info("Pausing")
+                        media.playStation()
+                    returnValue = "<value><u8>0</u8></value>"
+            elif (operation == "GET") :
+                if (iStatus <> 0):
+                    returnValue = "<value><u8>0</u8></value>"
+                else:
+                    returnValue = "<value><u8>1</u8></value>"
+
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+
+        elif ApiAction == "netRemote.sys.caps.volumeSteps":
+            if (operation == "GET") :
+                returnValue = "<value><u8>20</u8></value>"
+
+        elif ApiAction == "netRemote.sys.audio.volume":
+            if (operation == "GET") :
+                returnValue = "<value><u8>"+str(int(settings.getInt('volume')/5))+"</u8></value>"
+                log.debug("volume %s", returnValue)
+            elif (operation == "SET") :
+                NewVolume = int(FsapiValue) * 5
+
+                if (NewVolume > 100):
+                    NewVolume = 100
+                elif (NewVolume < 0):
+                    NewVolume = 0
+
+                settings.set('volume',NewVolume)
+                returnValue = "<value><u8>"+str(int(NewVolume/5))+"</u8></value>"
+
+        elif (ApiAction == "netRemote.sys.power"):
+            # or ((ApiAction == "off") and( ApiValue == "alarm")):
+            log.debug("iStatus=%d, value=%s", iStatus, FsapiValue)
+            if (operation == "GET") :
+                if (int(FsapiValue) == -1):
+                    if (iStatus > 0) or (Poweredon == True):
+                        returnValue = "<value><u8>1</u8></value>"
+                        #~ log.debug("power=On")
+                    else:
+                        returnValue = "<value><u8>0</u8></value>"
+                        #~ log.debug("power=Off")
+                elif (int(FsapiValue) == 0):
+                    alarm.stopAlarm()
+                    if (Poweredon == True):
+                        returnValue = "<value><u8>0</u8></value>"
+                        #~ log.debug("power=On")
+                    else:
+                        returnValue = "<value><u8>1</u8></value>"
+                        #~ log.debug("power=Off")
+                else:
+                    returnValue = "<value><u8>0</u8></value>"
+            elif (operation == "SET") :
+                #~ log.debug("iStatus=%d, value=%s", iStatus, FsapiValue)
+                if (int(FsapiValue) == 0):
+                    if media.playerActive():
+                        alarm.stopAlarm()
+                    if (iStatus > 0): # if playing something, but not an alarm
+                        media.stopPlayer()
+                    returnValue = "<value><u8>1</u8></value>"
+                    Poweredon = False
+                    #~ log.debug("Set power=Off")
+                else:
+                    returnValue = "<value><u8>0</u8></value>"
+                    Poweredon = True
+                    #~ log.debug("Set power=On")
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
+
+        elif ApiAction == "off":
+            if ApiAction == "volume":
+                NewVolume = settings.getInt('volume') - int(1)
+
+                if (NewVolume > 100):
+                    NewVolume = 100
+                elif (NewVolume < 0):
+                    NewVolume = 0
+                settings.set('volume',NewVolume)
+
+        elif ApiAction == "on":
+            if ApiAction == "volume":
+                NewVolume = settings.getInt('volume') + int(1)
+
+                if (NewVolume > 100):
+                    NewVolume = 100
+                elif (NewVolume < 0):
+                    NewVolume = 0
+                settings.set('volume',NewVolume)
+
+        elif ApiAction <> "status":
+            log.debug("unknown api %s", ApiAction)
+            return "<?xml version=\"1.0\"?>\n<fsapiResponse>\n<status>FS_NODE_DOES_NOT_EXIST</status>\n</fsapiResponse>"
+
+
+        # Return Current Status
+        #~ CurrentStation = media.playerActiveStation()
+
+        #~ if alarm.nextAlarmStation != None:
+            #~ AlarmStation = StationList[alarm.nextAlarmStation]
+        #~ else:
+            #~ AlarmStation = "None"
+        #~ AlarmTime = alarm.getNextAlarm()
+        # AlarmState - bit 0 = 1 - Sounding
+        #              bit 1 = 1 - Automatic
+        #~ AlarmState = 0
+        #~ if AlarmTime != None:
+            #~ AlarmTime = AlarmTime.time().strftime('%H:%M')
+
+            #~ if alarm.isAlarmSounding():
+                #~ AlarmState += 1
+
+            #~ if settings.get('manual_alarm') == '':
+                #~ NextAlarmType = "Automatic"
+                #~ AlarmState += 2
+            #~ else:
+                #~ NextAlarmType = "Manual"
+        #~ else:
+            #~ AlarmTime = "XX:XX"
+            #~ NextAlarmType = "None"
+
+
+        #~ Statusjson = { 'Status': PlayerStatus[iStatus], 'Station': CurrentStation, 'Brightness' : brightnessthread.getBrightnessTweak(),
+        #~    'Volume' : settings.getInt('volume'), 'AlarmState': AlarmState, 'AlarmTIme':AlarmTime, 'AlarmStation':AlarmStation, 'NextAlarmType' : NextAlarmType}
+
+        #web.header('Content-Type','application/json')
+        return "<?xml version=\"1.0\"?>\n<fsapiResponse>\n<status>FS_OK</status>\n" + str(returnValue) + "\n</fsapiResponse>"
+
+    def CREATE_SESSION(self,operation,ApiAction):
+        global alarm, StationList, iplist
+        returnValue = 0
+        RequesterIP = web.ctx['ip']
+        maxItems = 1
+        #~ log.info("%s=%s" %(RequesterIP, iplist[0]))
+        #~ if (iplist.index(RequesterIP) == -1 ):
+        user_data = web.input(pin="",sid="",value="0",maxItems="1")
+        Fsapipin = user_data.pin
+        FsapiValue = user_data.sid
+        log.debug("api %s", ApiAction)
+        log.debug("operation %s", operation)
+        log.debug("Pin %s", pin)
+        log.debug("Webdata %s", web.data)
 
 class WebApplication(threading.Thread):
    def __init__(self, alarmThread, Settingsthread, Media, Caller, brightnessthreadptr):
@@ -1014,13 +1362,14 @@ class WebApplication(threading.Thread):
 
    def run(self):
       #~ global session
-      log.debug("Starting up web server")
+      log.debug("Starting up https web server")
 
-      home_dir = os.getcwd() #os.path.expanduser('~')
+      #home_dir = os.getcwd() #os.path.expanduser('~')
+      home_dir = "/home/pi/piclock" #os.path.expanduser('~')
 
       #  openssl req -new -x509 -keyout serverssl.pem -out serverssl.pem -days 365 -nodes
-      CherryPyWSGIServer.ssl_certificate = os.path.join(home_dir, "serverssl.pem")
-      CherryPyWSGIServer.ssl_private_key = os.path.join(home_dir, "serverssl.pem")
+      CherryPyWSGIServer.ssl_certificate = os.path.join(home_dir, "serverssl.crt")
+      CherryPyWSGIServer.ssl_private_key = os.path.join(home_dir, "serverssl.key")
 
       #~ self.app = web.application(urls, globals())
       #~ if web.config.get('_session') is None:
@@ -1042,8 +1391,77 @@ class WebApplication(threading.Thread):
 
    def stop(self):
       #~ global users
-      log.debug("Shutting down web server")
+      log.debug("Shutting down https web server")
       #~ only do this when things have changed now
       #~ pickle.dump(users, open(webcredential_path, "wb" ) )
       app.stop()
+      apphttp.stop()
+
+class WebApplicationHTTP(threading.Thread):
+   def __init__(self, alarmThread, Settingsthread, Media, Caller, brightnessthreadptr, tftptr):
+      global alarm, users, settings, media, MainLoop, brightnessthread, webcredential_path, iplist, tft
+      threading.Thread.__init__(self)
+      alarm = alarmThread
+      brightnessthread = brightnessthreadptr
+      settings = Settingsthread
+      media = Media
+      MainLoop = Caller
+      tft = tftptr
+
+      #if os.path.isfile(webcredential_path):
+      #    #~ log.debug("getting webcredentials")
+      #    log.info("loading user info")
+      #    users = pickle.load( open(webcredential_path, "rb" ) )
+
+
+      #iplist = []
+      #NetworksIP = GetIPForNetwork("eth0")
+      #if (NetworksIP != ""):
+      #  log.info("Have LAN Connection")
+      #  iplist.append(NetworksIP)
+
+      #NetworksIP = GetIPForNetwork("wlan0")
+      #if (NetworksIP != ""):
+      #  log.info("Have Wifi Connection")
+      #  iplist.append(NetworksIP)
+
+      #~ self.session = None
+
+
+   def run(self):
+      #~ global session
+      log.debug("Starting up http web server")
+
+      #home_dir = os.getcwd() #os.path.expanduser('~')
+      home_dir = "/home/pi/piclock" #os.path.expanduser('~')
+
+      #  openssl req -new -x509 -keyout serverssl.pem -out serverssl.pem -days 365 -nodes
+      #CherryPyWSGIServer.ssl_certificate = os.path.join(home_dir, "serverssl.crt")
+      #CherryPyWSGIServer.ssl_private_key = os.path.join(home_dir, "serverssl.key")
+
+      #~ self.app = web.application(urls, globals())
+      #~ if web.config.get('_session') is None:
+        #~ log.debug("reading session from disk")
+        #~ self.session = web.session.Session(self.app, web.session.DiskStore('sessions'),
+                              #~ initializer={'user': ''})
+        #~ web.config._session = self.session
+      #~ else:
+        #~ self.session = web.config._session
+
+      web.config.debug = False
+      #~ web.config.log_file = "WebServer.log"
+      #~ web.config.log_toprint = False
+      #~ web.config.log_tofile = True
+
+      #~ self.app.internalerror = web.debugerror
+      web.httpserver.runsimple(apphttp.wsgifunc(), ("0.0.0.0", 80))
+      log.debug("Web server has stopped")
+
+   def stop(self):
+      #~ global users
+      log.debug("Shutting down http web server")
+      #~ only do this when things have changed now
+      #~ pickle.dump(users, open(webcredential_path, "wb" ) )
+      apphttp.stop()
+
 

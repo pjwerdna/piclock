@@ -201,7 +201,7 @@ class Weather:
       self.wspeed = int(int(wspeed) * 1.9438444924406)
 
    def setWindSpeedKts(self,wspeed):
-      self.wspeed = wspeed
+      self.wspeed = int(wspeed * 1.0)
 
    def setWindDirection(self,wdir):
       #~ if wdir==0:
@@ -216,7 +216,15 @@ class Weather:
 
    def display(self):
       #return "%sC, %03d@%s, %shPa %s" % (self.temp, self.wdir, self.wspeed, self.pressure, self.condition)
-      return "Temperature %sC, Wind %03d@%s, %s" % (self.temp, self.wdir, self.wspeed, self.condition)
+      try:
+        log.info("temp %sC" %(self.temp))
+        log.info("wdir %s" %(self.wdir))
+        log.info("wspeed %s mph" %(self.wspeed))
+        log.info("condition %s" %(self.condition))
+        return "Temperature %sC, Wind %s at %s mph, %s" % (self.temp, self.wdir, self.wspeed, self.condition)
+      except:
+        log.exception("Error Decoding weather")
+        return "No Weather is available"
 
    def speech(self):
       speech = ""
@@ -230,3 +238,4 @@ class Weather:
 
    def __str__(self):
       return "Weather[temp=%s,wdir=%s,wspeed=%s,press=%s,cond='%s']" % (self.temp, self.wdir, self.wspeed, self.pressure, self.condition)
+

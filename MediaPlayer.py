@@ -25,6 +25,7 @@ class MediaPlayer:
       self.player = False
       self.effect = False
       self.CurrentStation = ""
+      self.CurrentStationNo = -1
       self.CurrentURL = ""
 
    def playerActive(self):
@@ -41,6 +42,12 @@ class MediaPlayer:
           return self.CurrentStation
       else:
           return "None"
+
+   def playerActiveStationNo(self):
+      if self.player:
+          return str(self.CurrentStationNo)
+      else:
+          return "-1"
 
    def soundAlarm(self, alarmThread, Station = -1):
       log.info("Playing alarm")
@@ -80,6 +87,7 @@ class MediaPlayer:
       self.player.loadlist(stationinfo['url'])
       self.player.loop = 0
       self.CurrentStation = stationinfo['name']
+      self.CurrentStationNo = station
       self.CurrentURL = stationinfo['url']
 
    def playStationURL(self,stationName, StationURL):
@@ -90,6 +98,7 @@ class MediaPlayer:
       self.player.loadlist(StationURL)
       self.player.loop = 0
       self.CurrentStation = stationName
+      self.CurrentStationNo = -1
       self.CurrentURL = StationURL
 
    def playMedia(self,file,loop=-1):
