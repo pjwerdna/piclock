@@ -1,3 +1,5 @@
+This file was never required or used
+
 CLIENT_ID=' 123245456567-sdfsdfsfethryjrthwefwrghrtherger.apps.googleusercontent.com'
 CLIENT_SECRET='SSSSSSSSSSSSSSSSSSSSSSSSSSS'
 DEVELOPER_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAA'
