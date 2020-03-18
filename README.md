@@ -25,15 +25,18 @@ Raspberry Pi Based clock and Alarm clock with 3.5 inch touchscreen. Each day of 
 
 ## mplayer Install
 Plays the Inernet radio streams
-```sudo apt-get install mplayer2
+```
+sudo apt-get install mplayer2
 ```
 
 ## mplayer.py Install
 Python interface to mplayer2
-```sudo git clone https://github.com/baudm/mplayer.py.git
+```
+sudo git clone https://github.com/baudm/mplayer.py.git
 ```
 The clone command puts the code in the mplayer.py folder so link mplayer to a sub folder where the xxx.py is
-```cd mplayer.py
+```
+cd mplayer.py
 ln -s ./mplayer.py/mplayer
 ```
 
