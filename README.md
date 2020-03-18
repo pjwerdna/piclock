@@ -34,31 +34,34 @@ Python interface to mplayer2
 ```
 sudo git clone https://github.com/baudm/mplayer.py.git
 ```
-The clone command puts the code in the mplayer.py folder so link mplayer to a sub folder where the xxx.py is
+The clone command puts the code in the mplayer.py folder so link mplayer to a sub folder where the piclock.py is
 ```
-cd mplayer.py
-ln -s ./mplayer.py/mplayer
+cd piclock
+ln -s mplayer ..../mplayer.py/mplayer
 ```
 
 ## festival Install
-Allows the clock to speak
-- sudo apt-get install festival
+Allows the clock to speak. Two choices "festival" or "pico"
+```
+sudo apt-get install festival
+sudo apt-get install libttspico-utils
+```
 
 ## Fonts Install
-See 7 & 14 segment Font from
+Install 7 & 14 segment Font from
  http://www.keshikan.net/fonts-e.html
 
-## Python Libs
+## Python Librarys
 ```
 sudo apt-get install python-gflags python-httplib2
-sudo easy_install pytz
 sudo apt-get install python-dateutil
+sudo apt-get install python-pip
+sudo pip install pytz
 sudo pip install --upgrade google-api-python-client
 sudo pip install --upgrade oauth2client
 sudo pip install --upgrade oauth2client.tools
 sudo pip install TSL2561
 sudo pip install Adafruit_GPIO
-sudo apt-get install libttspico-utils
 ```
 
 ## SSL Certificate generation
