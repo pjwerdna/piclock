@@ -37,6 +37,11 @@ urlshttp = (
     '/fsapi/','fsapi',
     '/fsapi/(.+)','fsapi',
     '/fsapi/(.+)/(.+)','fsapi',
+    '/home', 'api',
+    '/api', 'api',
+    '/api/(.+)', 'api',
+    #'/logout', 'logout',
+    #'/signin', 'signin',
     #~ '/(images|js)/(.+)', 'static',
 )
 
@@ -46,8 +51,7 @@ global alarm, brightnessthread
 global settings
 global session
 
-global AccessPin
-AccessPin="123456"
+# global AccessPin # Use setting DB directly
 
 # Player status as text
 PlayerStatus = {0:"Stopped", 1:"Playing", 2:"Paused" }
@@ -339,6 +343,11 @@ class set:
             value="",
             size=10,
          ),
+         form.Password("newpin",
+            description="New Pin Code",
+            value="",
+            size=10,
+         ),
          #~ form.Textbox("home",
             #~ form.notnull,
             #~ description="Home location",
@@ -455,6 +464,10 @@ class set:
       #~ if form['work'].value != settings.get('location_work'):
          #~ changes.append("Set Work location to %s" % (form['work'].value))
          #~ settings.set('location_work', form['work'].value)
+
+      if form['newpin'].value != "":
+         changes.append("Set API Pin")
+         settings.set('apipin', form['newpin'].value)
 
       if form['weatherloc'].value != settings.get('weather_location'):
          changes.append("Set weather location to %s" % (form['weatherloc'].value))
@@ -817,15 +830,17 @@ class api: # returns json describing the Player State
         #~ if (iplist.index(RequesterIP) == -1 ):
         if (RequesterIP not in iplist):
             if (userLoggedout(session)) :
-                log.info("Not logged in")
-                return ("")
+                log.info("api Not logged in %s", RequesterIP)
+                raise web.seeother('/signin')
+                # return ("")
 
 
         user_data = web.input(action="None",value="")
         ApiAction = user_data.action
         ApiValue = user_data.value
 
-        #~ log.debug("API Action = %s " , ApiAction)
+        log.debug("API Action = %s" , ApiAction)
+        log.debug("API ApiValue = %s", ApiValue)
 
 
         if media.playerActive():
@@ -840,7 +855,14 @@ class api: # returns json describing the Player State
             #~ for stationname in Settings.STATIONS:
                 #~ StationList.append(stationname['name'])
 
-            newstation = StationList[StationList.index(ApiValue)]
+            try:
+
+                newStationNo = int(StationList.index(ApiValue))
+            except:
+                newStationNo = 0
+
+            # Check station not already active (which is a string)
+            newstation = StationList[newStationNo]
             if (iStatus == 0) or (media.playerActiveStation() <> newstation):
                 # Need to stop the alarm or it will retrigger
                 if alarm.isAlarmSounding():
@@ -849,7 +871,7 @@ class api: # returns json describing the Player State
                     media.stopPlayer()
 
                 #~ log.info("Playing : " + newstation)
-                media.playStation(StationList.index(ApiValue))
+                media.playStation(newStationNo)
 
         elif ApiAction == "stop":
             if (iStatus == 1) or (iStatus == 2):
@@ -1035,12 +1057,16 @@ class fsapi: # returns FS API describing the Player State
         log.debug("DO \"%s\" %s", operation, ApiAction)
         #log.debug("Pin %s", Fsapipin)
 
-        if (RequesterIP not in iplist) and (Fsapipin != AccessPin):
+        if ( operation == "CREATE_SESSION"):
+            returnValue = "<sessionId>123456789</sessionId>"
+            #returnValue = "<c8_array>123456789</c8_array>"
+
+        if (RequesterIP not in iplist) and (Fsapipin != settings.getorset('apipin',"123456")):
             if (userLoggedout(session)) :
-                log.info("Not logged in")
+                log.info("fsapi Not logged in %s", RequesterIP)
+                if (Fsapipin != settings.getorset('apipin',"123456")):
+                    log.info("API PIn dioesnt match")
                 return ("")
-
-
 
         #~ log.debug("API Action = %s " , ApiAction)
 
@@ -1346,22 +1372,23 @@ class WebApplication(threading.Thread):
           users = pickle.load( open(webcredential_path, "rb" ) )
 
 
-      iplist = []
-      NetworksIP = GetIPForNetwork("eth0")
-      if (NetworksIP != ""):
-        log.info("Have LAN Connection")
-        iplist.append(NetworksIP)
-
-      NetworksIP = GetIPForNetwork("wlan0")
-      if (NetworksIP != ""):
-        log.info("Have Wifi Connection")
-        iplist.append(NetworksIP)
-
       #~ self.session = None
 
 
    def run(self):
-      #~ global session
+      global iplist
+
+      iplist = ["127.0.0.1"]
+      NetworksIP = GetIPForNetwork("eth0")
+      if (NetworksIP != ""):
+        log.info("Have LAN Connection %s", NetworksIP)
+        iplist.append(NetworksIP)
+
+      NetworksIP = GetIPForNetwork("wlan0")
+      if (NetworksIP != ""):
+        log.info("Have Wifi Connection %s", NetworksIP)
+        iplist.append(NetworksIP)
+
       log.debug("Starting up https web server")
 
       #home_dir = os.getcwd() #os.path.expanduser('~')
