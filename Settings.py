@@ -1,7 +1,9 @@
 import sqlite3
 import subprocess
-import CalendarCredentials
+#import CalendarCredentials
 import logging
+# Changes
+# 1 Rearranged output of "python Settings.py"
 
 log = logging.getLogger('root')
 
@@ -37,33 +39,6 @@ class Settings:
 
    # Our default settings for when we create the table
    DEFAULTS= [
-      ('volume','100'), # Volume
-      ('station','1'), # Radio station to play
-      ('radio_delay','10'), # Delay (secs) to wait for radio to start
-      ('snooze_length','5'), # Time (mins) to snooze for
-      ('max_brightness','100'), # Maximum brightness
-      ('min_brightness','1'), # Minimum brightness
-      ('brightness_timeout','20'), # Time (secs) after which we should revert to auto-brightness
-      ('menu_timeout','20'), # Time (secs) after which an un-touched menu should close
-      ('wakeup_time','30'), # Time (mins) before event that alarm should be triggered (excluding travel time) (30 mins pre-shift + 45 mins wakeup)
-      ('manual_alarm',''), # Manual alarm time (default not set)
-      ('calendar',CalendarCredentials.CALENDAR), # Calendar to gather events from
-      ('holiday_mode','0'), # Is holiday mode (no auto-alarm setting) enabled?
-      ('sfx_enabled','1'), # Are sound effects enabled?
-      ('default_wake','0815'), # Alarm time for Holidays
-      ('alarm_timeout','120'), # If the alarm is still going off after this many minutes, stop it
-      ('weather_location','Slough'), # The location to load weather for
-      ('weather_on_alarm','1'), # Read out the weather on alarm cancel
-      ('preempt_cancel','600'), # Number of seconds before an alarm that we're allowed to cancel it
-      ('location_home','Lyndale Road, GreenBit, Surrey, UK'), # Location for home
-      ('location_work','Gatwick Airport'), # Default location for work (if lookup from event fails)
-      ('tts_path','/usr/bin/festival --tts'), # The command we pipe our TTS output into
-      ('clock_format','4'), # 4 or 6 digit clock
-      ('clock_font','dseg7modern'), # default font
-      ('menu_font',''), # default font
-      ('clock_colour','255,0,0'), # default clock colour
-      ('gradual_volume','0'), # Gradual volume increase on Alarm
-
       ('alarm_weekday_0','08:35'), # Monday
       ('alarm_station_0','1'), # Radio station to play
       ('alarm_weekday_1','08:35'), # Tuesday
@@ -79,8 +54,36 @@ class Settings:
       ('alarm_weekday_6','09:35'), # Sunday
       ('alarm_station_6','0'), # Radio station to play
 
-      ('quiet_reboot','0'), # no speech when starting up
+      ('alarm_timeout','120'), # If the alarm is still going off after this many minutes, stop it
+      ('apipin','123456'),
+      ('brightness_timeout','20'), # Time (secs) after which we should revert to auto-brightness
       ('brightness_tweak','0'),
+      ('calendar','Calendar@google.local'), # Calendar to gather events from
+      ('clock_colour','255,0,0'), # default clock colour
+      ('clock_format','4'), # 4 or 6 digit clock
+      ('clock_font','dseg7modern'), # default font
+      ('default_wake','0815'), # Alarm time for Holidays
+      ('holiday_mode','0'), # Is holiday mode (no auto-alarm setting) enabled?
+      ('gradual_volume','0'), # Gradual volume increase on Alarm
+      ('location_home','Birmingham, UK'), # Location for home
+      ('location_work','London Airport'), # Default location for work (if lookup from event fails)
+      ('manual_alarm',''), # Manual alarm time (default not set)
+      ('max_brightness','100'), # Maximum brightness
+      ('menu_font',''), # default font
+      ('menu_timeout','20'), # Time (secs) after which an un-touched menu should close
+      ('min_brightness','1'), # Minimum brightness
+      ('preempt_cancel','600'), # Number of seconds before an alarm that we're allowed to cancel it
+      ('quiet_reboot','0'), # no speech when starting up (Only used during reboots or restarts of the clock)
+      ('radio_delay','10'), # Delay (secs) to wait for radio to start
+      ('sfx_enabled','1'), # Are sound effects enabled?
+      ('snooze_length','5'), # Time (mins) to snooze for
+      ('station','1'), # Radio station to play
+      ('tts_path','/usr/bin/festival --tts'), # The command we pipe our TTS output into
+      ('weather_location','Slough'), # The location to load weather for
+      ('weather_on_alarm','1'), # Read out the weather on alarm cancel
+      ('volume','100'), # Volume
+      ('wakeup_time','30'), # Time (mins) before event that alarm should be triggered (excluding travel time) (30 mins pre-shift + 45 mins wakeup)
+      ('WUG_KEY',''), # wunderground access key (doesnt work anymore!)
    ]
 
    def __init__(self):

@@ -4,7 +4,7 @@ import urllib2
 import Settings
 import logging
 import requests
-import CalendarCredentials
+#import CalendarCredentials
 import json
 import os
 import time
@@ -65,8 +65,8 @@ class WeatherFetcher:
                 if(place is None or place is ""):
                     place = "London" # Default to Gatwick
 
-                log.debug('http://api.wunderground.com/api/%s/forecast/q/UK/%s.json' % (CalendarCredentials.WUG_KEY, place))
-                response = requests.get('http://api.wunderground.com/api/%s/forecast/q/UK/%s.json' % (CalendarCredentials.WUG_KEY, place), timeout=3)
+                log.debug('http://api.wunderground.com/api/%s/forecast/q/UK/%s.json' % (self.settings.get('WUG_KEY'), place))
+                response = requests.get('http://api.wunderground.com/api/%s/forecast/q/UK/%s.json' % (self.settings.get('WUG_KEY'), place), timeout=3)
                 log.debug("Completed request to wunderground")
 
                 #~ cachefile = open('weather.cache2.txt','w')
@@ -98,8 +98,8 @@ class WeatherFetcher:
                     cachefile.close()
                     # ['response']['results'][0]['zmw']
                     sNewLocation = response['response']['results'][0]['zmw']
-                    log.debug('http://api.wunderground.com/api/%s/forecast/q/zmw:%s.json' % (CalendarCredentials.WUG_KEY, sNewLocation))
-                    response = requests.get('http://api.wunderground.com/api/%s/forecast/q/zmw:%s.json' % (CalendarCredentials.WUG_KEY, sNewLocation), timeout=3)
+                    log.debug('http://api.wunderground.com/api/%s/forecast/q/zmw:%s.json' % (self.settings.get('WUG_KEY'), sNewLocation))
+                    response = requests.get('http://api.wunderground.com/api/%s/forecast/q/zmw:%s.json' % (self.settings.get('WUG_KEY'), sNewLocation), timeout=3)
 
                     response = response.json()
                     log.debug("Parsed response")

@@ -429,7 +429,19 @@ class set:
             value=settings.get('tts_path'),
             size=10,
          ),
-      )
+         form.Textbox("calendaremail",
+            form.notnull,
+            description="Calender Email Address",
+            value=settings.get('calendar'),
+            size=10,
+         ),
+         form.Textbox("WUG_KEY",
+            form.notnull,
+            description="Weather wunderground Key",
+            value=settings.getorset('WUG_KEY',''),
+            size=10,
+         ),
+     )
 
    def GET(self):
       #~ global session
@@ -492,6 +504,14 @@ class set:
       if form['waketime'].value != settings.get('default_wake'):
          changes.append("Set Holiday wake time to %s" % (form['waketime'].value))
          settings.set('default_wake', form['waketime'].value)
+
+      if form['calendaremail'].value != settings.get('calendar'):
+         changes.append("Set Calender Email to %s" % (form['calendaremail'].value))
+         settings.set('calendar', form['calendaremail'].value)
+
+      if form['WUG_KEY'].value != settings.get('WUG_KEY'):
+         changes.append("Set Weather wunderground Key to %s" % (form['WUG_KEY'].value))
+         settings.set('WUG_KEY', form['WUG_KEY'].value)
 
       if form['holidaymode'].checked != (settings.getInt('holiday_mode') == 1):
          changes.append("Setting Away mode to %s" % (form['holidaymode'].checked))
