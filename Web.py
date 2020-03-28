@@ -14,6 +14,14 @@ import pickle
 from wsgilog import WsgiLog
 import json
 
+# 22/03/2020 - MOved weather Underground key to settings
+# 27/03/2020 - Allow weather Underground key to be blank
+
+
+# fsapi based on
+# https://github.com/flammy/fsapi
+# https://github.com/flammy/fsapi/blob/master/FSAPI.md#play
+
 urls = (
     '/','error',
     '/home', 'player',
@@ -436,7 +444,6 @@ class set:
             size=10,
          ),
          form.Textbox("WUG_KEY",
-            form.notnull,
             description="Weather wunderground Key",
             value=settings.getorset('WUG_KEY',''),
             size=10,
@@ -510,7 +517,7 @@ class set:
          settings.set('calendar', form['calendaremail'].value)
 
       if form['WUG_KEY'].value != settings.get('WUG_KEY'):
-         changes.append("Set Weather wunderground Key to %s" % (form['WUG_KEY'].value))
+         changes.append("Set Weather wunderground Key to '%s'" % (form['WUG_KEY'].value))
          settings.set('WUG_KEY', form['WUG_KEY'].value)
 
       if form['holidaymode'].checked != (settings.getInt('holiday_mode') == 1):

@@ -5,6 +5,8 @@
 # Alarm cancelling
 # radio control (left side)
 
+# 27/03/2020 - Actually uses SCREEN_HEIGHT and SCREEN_WIDTH
+
 #from LCDControl.LCDControl import LCDControl
 #import gaugette.rotary_encoder
 import time
@@ -257,12 +259,12 @@ class TFTThread(threading.Thread):
         #if (ExtraText != self.oldExtraText):
             #self.oldExtraText = ExtraText
         lineheight = self.font_normal.get_linesize()
-        area.append(pygame.draw.rect(self.tftScreen,colours.BLACK,(0,320-lineheight,480,lineheight)))
+        area.append(pygame.draw.rect(self.tftScreen,colours.BLACK,(0,SCREEN_HEIGHT-lineheight,SCREEN_WIDTH,lineheight)))
             #self.oldExtrawidth = text_surface.get_width()
 
 
         text_surface = self.font_normal.render(ExtraText, True, colour)
-        rect = text_surface.get_rect(left=10-self.ExtraTextoffset,bottom=320)
+        rect = text_surface.get_rect(left=10-self.ExtraTextoffset,bottom=SCREEN_HEIGHT)
         area.append( self.tftScreen.blit(text_surface,rect))
 
         # If we have extra text work out how long it is for scrolling
@@ -416,9 +418,9 @@ class TFTThread(threading.Thread):
             Textwidth, Textheight = self.font_normal.size(Text)
             x = (SCREEN_WIDTH/2) - (Textwidth/2)
         if (x<0) and (y>0):
-            rect = text_surface.get_rect(right=480+x,top=y)
+            rect = text_surface.get_rect(right=SCREEN_WIDTH+x,top=y)
         elif (x<0) and (y<0):
-            rect = text_surface.get_rect(right=480+x,bottom=SCREEN_HEIGHT+y)
+            rect = text_surface.get_rect(right=SCREEN_WIDTH+x,bottom=SCREEN_HEIGHT+y)
         elif (x>0) and (y<0):
             rect = text_surface.get_rect(left=x,bottom=SCREEN_HEIGHT+y)
         else:
@@ -501,11 +503,11 @@ class TFTThread(threading.Thread):
         #pygame.draw.rect(text_surface,border,(0,0,Textwidth-1,Textheight-1,1))
         outerarea = None
         if (x<0) and (y<0):
-            rect = ImageSurface.get_rect(right=480+x+4,bottom=320+y-4, width=Imagewidth, height=Imageheight)
+            rect = ImageSurface.get_rect(right=SCREEN_WIDTH+x+4,bottom=SCREEN_HEIGHT+y-4, width=Imagewidth, height=Imageheight)
             if colour != None:
-                outerarea = pygame.draw.rect(self.tftScreen,colour,(480-Imagewidth+x,320-Imageheight+y,Imagewidth-1,Imageheight-1),0)
+                outerarea = pygame.draw.rect(self.tftScreen,colour,(SCREEN_WIDTH-Imagewidth+x,SCREEN_HEIGHT-Imageheight+y,Imagewidth-1,Imageheight-1),0)
             if backcolour != None:
-                pygame.draw.rect(self.tftScreen,backcolour,(480-Imagewidth+x,320-Imageheight+y,Imagewidth-1,Imageheight-1),1)
+                pygame.draw.rect(self.tftScreen,backcolour,(SCREEN_WIDTH-Imagewidth+x,SCREEN_HEIGHT-Imageheight+y,Imagewidth-1,Imageheight-1),1)
         else:
             rect = ImageSurface.get_rect(left=x+4,top=y+4, width=Imagewidth, height=Imageheight)
             if colour != None:
@@ -1525,9 +1527,9 @@ class TFTThread(threading.Thread):
                                 self.ControlAlarm()
 
 
-                        elif (mx > CONTROL_ZONE) and (mx < 480 - CONTROL_ZONE): # i the middle
+                        elif (mx > CONTROL_ZONE) and (mx < SCREEN_WIDTH - CONTROL_ZONE): # i the middle
 
-                            if (my > 320- CONTROL_ZONE): # bottom tap
+                            if (my > SCREEN_HEIGHT - CONTROL_ZONE): # bottom tap
                                 #~ self.caller.clockMessage("Discovering Weather...")
                                 self.ExtraMessage = "Discovering Weather..."
                                 LocalWeather = self.weather.getWeather()
@@ -1562,7 +1564,7 @@ class TFTThread(threading.Thread):
                             self.ControlRadio()
                             checkmessage = 1
 
-                   elif (event.type is MOUSEBUTTONDOWN) and (mx > 480 - CONTROL_ZONE): # Start Volume drag
+                   elif (event.type is MOUSEBUTTONDOWN) and (mx > SCREEN_WIDTH - CONTROL_ZONE): # Start Volume drag
 
                        if (volumedragstart == -1):
                             volumedragstart = my

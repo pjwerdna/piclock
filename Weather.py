@@ -46,130 +46,135 @@ class WeatherFetcher:
         self.jsoncacheTimeout = None
 
    def getWeather(self):
-      if(self.cache is None or self.cacheTimeout is None or self.cacheTimeout < datetime.datetime.now(pytz.timezone('Europe/London'))):
-         weather = Weather()
+        if (self.settings.get('WUG_KEY') <> ""):
+          # Only try getting weather if its been setup
 
-         #~ if (self.jsoncacheTimeout > datetime.datetime.now(pytz.timezone('Europe/London'))):
-             #~ log.info("jason cache %s > %s", self.jsoncacheTimeout, datetime.datetime.now(pytz.timezone('Europe/London')))
+          if(self.cache is None or self.cacheTimeout is None or self.cacheTimeout < datetime.datetime.now(pytz.timezone('Europe/London'))):
+             weather = Weather()
 
-         if (self.jsoncache != None) and (self.jsoncacheTimeout > datetime.datetime.now()):
-             log.info("Reusing json Weather cache")
-             log.debug("%s > %s", self.jsoncacheTimeout, datetime.datetime.now())
-             response = self.jsoncache
-         else:
-            log.info("Weather cache expired or doesn't exist, re-fetching")
-            try:
-                log.debug("Making request to wunderground")
+             #~ if (self.jsoncacheTimeout > datetime.datetime.now(pytz.timezone('Europe/London'))):
+                 #~ log.info("jason cache %s > %s", self.jsoncacheTimeout, datetime.datetime.now(pytz.timezone('Europe/London')))
 
-                place = self.settings.get('weather_location')
-                if(place is None or place is ""):
-                    place = "London" # Default to Gatwick
+             if (self.jsoncache != None) and (self.jsoncacheTimeout > datetime.datetime.now()):
+                 log.info("Reusing json Weather cache")
+                 log.debug("%s > %s", self.jsoncacheTimeout, datetime.datetime.now())
+                 response = self.jsoncache
+             else:
+                log.info("Weather cache expired or doesn't exist, re-fetching")
+                try:
+                    log.debug("Making request to wunderground")
 
-                log.debug('http://api.wunderground.com/api/%s/forecast/q/UK/%s.json' % (self.settings.get('WUG_KEY'), place))
-                response = requests.get('http://api.wunderground.com/api/%s/forecast/q/UK/%s.json' % (self.settings.get('WUG_KEY'), place), timeout=3)
-                log.debug("Completed request to wunderground")
+                    place = self.settings.get('weather_location')
+                    if(place is None or place is ""):
+                        place = "London" # Default to Gatwick
 
-                #~ cachefile = open('weather.cache2.txt','w')
-                #~ cachefile.write(response.text)
-                #~ cachefile.close()
+                    log.debug('http://api.wunderground.com/api/%s/forecast/q/UK/%s.json' % (self.settings.get('WUG_KEY'), place))
+                    response = requests.get('http://api.wunderground.com/api/%s/forecast/q/UK/%s.json' % (self.settings.get('WUG_KEY'), place), timeout=3)
+                    log.debug("Completed request to wunderground")
 
-                response = response.json()
-                log.debug("Parsed response")
-
-                # find forecast
-                hasforecast = False
-                for itemid in response:
-                    if itemid == 'forecast':
-                        hasforecast = True
-
-                #~ for iindex, iitem in enumerate(response['response']['results'][0]['zmw']):
-                    #~ print iindex , " = " , iitem
-
-
-
-                if hasforecast == True:
-                    log,info("has forecast")
-                    attempt = response['forecast'] # So we get a KeyError thrown if the response isn't correct
-                    self.jsoncache = response
-                else:
-                    log.info("Weather has no forecast, trying redirected location")
-                    cachefile = open('weather.cache.json.txt','w')
-                    json.dump(response,cachefile)
-                    cachefile.close()
-                    # ['response']['results'][0]['zmw']
-                    sNewLocation = response['response']['results'][0]['zmw']
-                    log.debug('http://api.wunderground.com/api/%s/forecast/q/zmw:%s.json' % (self.settings.get('WUG_KEY'), sNewLocation))
-                    response = requests.get('http://api.wunderground.com/api/%s/forecast/q/zmw:%s.json' % (self.settings.get('WUG_KEY'), sNewLocation), timeout=3)
+                    #~ cachefile = open('weather.cache2.txt','w')
+                    #~ cachefile.write(response.text)
+                    #~ cachefile.close()
 
                     response = response.json()
                     log.debug("Parsed response")
 
-                    #~ for iindex, iitem in enumerate(response):
+                    # find forecast
+                    hasforecast = False
+                    for itemid in response:
+                        if itemid == 'forecast':
+                            hasforecast = True
+
+                    #~ for iindex, iitem in enumerate(response['response']['results'][0]['zmw']):
                         #~ print iindex , " = " , iitem
 
-                    try:
+
+
+                    if hasforecast == True:
+                        log,info("has forecast")
                         attempt = response['forecast'] # So we get a KeyError thrown if the response isn't correct
                         self.jsoncache = response
-                    except:
-                        log.exception("Weather has no forecast")
+                    else:
+                        log.info("Weather has no forecast, trying redirected location")
+                        cachefile = open('weather.cache.json.txt','w')
+                        json.dump(response,cachefile)
+                        cachefile.close()
+                        # ['response']['results'][0]['zmw']
+                        sNewLocation = response['response']['results'][0]['zmw']
+                        log.debug('http://api.wunderground.com/api/%s/forecast/q/zmw:%s.json' % (self.settings.get('WUG_KEY'), sNewLocation))
+                        response = requests.get('http://api.wunderground.com/api/%s/forecast/q/zmw:%s.json' % (self.settings.get('WUG_KEY'), sNewLocation), timeout=3)
 
-                log.debug("writing weather to local cache")
-                cachefile = open('weather.cache.json','w')
-                json.dump(response,cachefile)
-                cachefile.close()
+                        response = response.json()
+                        log.debug("Parsed response")
 
-                # Update cache timeout to avoid repeatedly spamming requests (see https://github.com/mattdy/alarmpi/issues/2)
-                timeout = datetime.datetime.fromtimestamp(os.path.getmtime('weather.cache.json'))
-                timeout += datetime.timedelta(minutes=60) # Don't keep the cache for too long, just long enough to avoid request spam
-                self.jsoncacheTimeout = timeout
+                        #~ for iindex, iitem in enumerate(response):
+                            #~ print iindex , " = " , iitem
 
-                timeout = datetime.datetime.now(pytz.timezone('Europe/London'))
-                timeout += datetime.timedelta(minutes=60) # Don't keep the cache for too long, just long enough to avoid request spam
-                self.cacheTimeout = timeout
+                        try:
+                            attempt = response['forecast'] # So we get a KeyError thrown if the response isn't correct
+                            self.jsoncache = response
+                        except:
+                            log.exception("Weather has no forecast")
 
+                    log.debug("writing weather to local cache")
+                    cachefile = open('weather.cache.json','w')
+                    json.dump(response,cachefile)
+                    cachefile.close()
 
+                    # Update cache timeout to avoid repeatedly spamming requests (see https://github.com/mattdy/alarmpi/issues/2)
+                    timeout = datetime.datetime.fromtimestamp(os.path.getmtime('weather.cache.json'))
+                    timeout += datetime.timedelta(minutes=60) # Don't keep the cache for too long, just long enough to avoid request spam
+                    self.jsoncacheTimeout = timeout
 
-
-            except:
-                log.exception("Error fetching weather")
-
-                self.jsoncache = None
-                self.cacheTimeout = None
-
-
-            #~ if(self.cache is not None):
-               #~ return self.cache # we have a cache, so return that rather than an empty object
-            #~ else:
-               #~ return weather # return empty Weather object as we have nothing else
-
-         log.info("extracting weather")
-
-         try:
-             Today_simple = response['forecast']["simpleforecast"]["forecastday"][0]
-             Today = response['forecast']["txt_forecast"]["forecastday"][0]
-
-             weather.setTempC(Today_simple["high"]["celsius"])
-             #weather.setCondition(response['forecast'][0].get("fcttext").replace("intensity ",""))
-             weather.setCondition(Today["fcttext_metric"])
-             weather.setWindSpeedKts(Today_simple["maxwind"]["mph"])
-             weather.setWindDirection(Today_simple["maxwind"]["dir"])
-             weather.setPressure(Today_simple["qpf_allday"]["in"])
-             #~ timeout = datetime.datetime.now(pytz.timezone('Europe/London'))
-             #~ timeout += datetime.timedelta(minutes=30) # Cache for 30 minutes
-             #~ self.cacheTimeout = timeout
-             #~ self.jsoncacheTimeout = timeout
-
-             #log.debug("Generated weather: %s" % (weather))
-         except:
-             log.exception("Error Decoding weather")
-
-             weather = None
-             self.cacheTimeout = None
+                    timeout = datetime.datetime.now(pytz.timezone('Europe/London'))
+                    timeout += datetime.timedelta(minutes=60) # Don't keep the cache for too long, just long enough to avoid request spam
+                    self.cacheTimeout = timeout
 
 
-         self.cache = weather
 
-      return self.cache
+
+                except:
+                    log.exception("Error fetching weather")
+
+                    self.jsoncache = None
+                    self.cacheTimeout = None
+
+
+                #~ if(self.cache is not None):
+                   #~ return self.cache # we have a cache, so return that rather than an empty object
+                #~ else:
+                   #~ return weather # return empty Weather object as we have nothing else
+
+             log.info("extracting weather")
+
+             try:
+                 Today_simple = response['forecast']["simpleforecast"]["forecastday"][0]
+                 Today = response['forecast']["txt_forecast"]["forecastday"][0]
+
+                 weather.setTempC(Today_simple["high"]["celsius"])
+                 #weather.setCondition(response['forecast'][0].get("fcttext").replace("intensity ",""))
+                 weather.setCondition(Today["fcttext_metric"])
+                 weather.setWindSpeedKts(Today_simple["maxwind"]["mph"])
+                 weather.setWindDirection(Today_simple["maxwind"]["dir"])
+                 weather.setPressure(Today_simple["qpf_allday"]["in"])
+                 #~ timeout = datetime.datetime.now(pytz.timezone('Europe/London'))
+                 #~ timeout += datetime.timedelta(minutes=30) # Cache for 30 minutes
+                 #~ self.cacheTimeout = timeout
+                 #~ self.jsoncacheTimeout = timeout
+
+                 #log.debug("Generated weather: %s" % (weather))
+             except:
+                 log.exception("Error Decoding weather")
+
+                 weather = None
+                 self.cacheTimeout = None
+
+
+             self.cache = weather
+
+          return self.cache
+        else:
+            return  None
 
    def forceUpdate(self):
       self.cacheTimeout = None

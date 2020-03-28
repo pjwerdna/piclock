@@ -3,7 +3,7 @@
 # Main Entry point
 # Starts all other threads
 #
-# Version 2.7
+# Version 2.8
 
 import logging
 import logging.handlers
@@ -176,18 +176,18 @@ class AlarmPi:
    def execute(self):
       #~ global lancheck
       global iplist
-      log.info("Starting up AlarmPi")
-      log.info("cwd=%s", os.getcwd())
+      log.info("Starting up PiClock")
+      #log.info("cwd=%s", os.getcwd())
 
       iplist = []
       NetworksIP = self.GetIPForNetwork("eth0")
       if (NetworksIP != ""):
-        log.info("Have LAN Connection %s" , NetworksIP)
+        log.debug("Have LAN Connection %s" , NetworksIP)
         iplist.append(NetworksIP)
 
       self.GetIPForNetwork("wlan0")
       if (NetworksIP != ""):
-        log.info("Have Wifi Connection %s" , NetworksIP)
+        log.debug("Have Wifi Connection %s" , NetworksIP)
         iplist.append(NetworksIP)
         # have lan and wifi
         #~ if (nolancheck == False):
