@@ -114,3 +114,7 @@ You should do this only when you're sure the clock is working correctly when you
 sudo ln -s /home/pi/piclock/piclock.sh /etc/init.d/piclock
 ```
 Logs go to /home/pi/piclock/piclock.log and /home/pi/piclock/piclockweb.log
+
+### FSAPI based on the following
+- https://github.com/openhab/openhab1-addons/wiki/Frontier-Silicon-Radio-Binding
+- https://github.com/flammy/fsapi
