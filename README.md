@@ -1,6 +1,6 @@
 # Pi Clock
 
-Raspberry Pi Based clock and Alarm clock with 3.5 inch touchscreen. Each day of the week can have a differant alarm time and internet radio station to play.
+Raspberry Pi Based Internet Radio Alarm clock with 3.5 inch touchscreen. Each day of the week can have a differant alarm time and internet radio station to play.
  Also has a "Holiday Mode" which sets the alarm to a fixed time.
 
  Originally based on http://mattdyson.org/projects/alarmpi/ (https://github.com/mattdy/alarmpi) But its changed considerably
