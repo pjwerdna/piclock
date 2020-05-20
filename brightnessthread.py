@@ -9,12 +9,14 @@ import math
 
 import pigpio
 
+# 31/03 - Tweaked brightness up at higher lumin levels
+
 LogBrightenss = False
 
 log = logging.getLogger('root')
 
 MINLOOP_TIME = float(0.25)
-MAXLOOP_TIME = float(4)
+MAXLOOP_TIME = float(1)
 
 class BrightnessThread(threading.Thread):
 
@@ -131,7 +133,9 @@ class BrightnessThread(threading.Thread):
 
          #~ reading, IRreading = self.sensor._get_luminosity()
          reading= self.sensor.lux()
-         scaledreading = float(reading) /2.8 # (was 7.0)
+         scaledreading = float(reading) /2.5 # (was 7.0)
+         if LogBrightenss:
+            log.debug("scaledreading=%f", scaledreading)
 
          #~ reading = float(100) # + self.BrightnessTweak)
 
