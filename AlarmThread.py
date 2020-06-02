@@ -165,20 +165,24 @@ class AlarmThread(threading.Thread):
       try:
          # Next event from Calendar
          nexteventInfo = self.alarmGatherer.getNextEventDetails()
-         # The time of the next Holiday on our calendar.
-         eventTime = dateutil.parser.parse(nexteventInfo['start'].get('dateTime', nexteventInfo['start'].get('date')))
-         log.debug("next event %s",eventTime)
+         if (nexteventInfo == None):
+             log.debug("no Holidays Listed")
 
-         # The summary of the next Holiday on our calendar.
-         eventsummary = nexteventInfo["summary"]
-         log.debug("next event is %s",eventsummary)
+         else:
+             # The time of the next Holiday on our calendar.
+             eventTime = dateutil.parser.parse(nexteventInfo['start'].get('dateTime', nexteventInfo['start'].get('date')))
+             log.debug("next event %s",eventTime)
 
-         # if next event summary is holiday
-         if (eventsummary.lower() == "holiday"):
-             HolidayCommingUp = True
-         if (eventsummary.lower() == "holiday mode"):
-             HolidayModeCommingUp = True
-             HolidayCommingUp = True
+             # The summary of the next Holiday on our calendar.
+             eventsummary = nexteventInfo["summary"]
+             log.debug("next event is %s",eventsummary)
+
+             # if next event summary is holiday
+             if (eventsummary.lower() == "holiday"):
+                 HolidayCommingUp = True
+             if (eventsummary.lower() == "holiday mode"):
+                 HolidayModeCommingUp = True
+                 HolidayCommingUp = True
 
       except Exception as e:
          log.exception("Could not obtain Holiday information")

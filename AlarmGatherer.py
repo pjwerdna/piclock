@@ -99,11 +99,18 @@ class AlarmGatherer:
    def checkCredentials(self):
       return not (self.credentials is None or self.credentials.invalid == True)
 
-   #~ def generateAuth(self):
-      #~ self.credentials = run(self.FLOW, self.storage)
+   def generateAuth(self):
+      self.credentials = run(self.FLOW, self.storage)
 
    # Get the first event that isn't today
    def getNextEvent(self, today=False):
+      """Gets Next event from google or the cache
+
+         Should cope with no events being cached, but not really tested that
+
+      Returns:
+        None or first event
+      """
       log.debug("Fetching details of next event")
       if not self.checkCredentials():
          log.error("GCal credentials have expired")
@@ -115,7 +122,7 @@ class AlarmGatherer:
       #time = datetime.datetime.now()
 
       # No event cache or cache has timed out
-      if (self.getNextEventTimeout == None) or (self.eventCache == None) or (datetime.datetime.now() > self.getNextEventTimeout):
+      if (self.getNextEventTimeout == None) or (len(self.eventCache) == 0) or (datetime.datetime.now() > self.getNextEventTimeout):
             http = self.credentials.authorize(httplib2.Http())
             try:
                 service = discovery.build('calendar', 'v3', http=http)
@@ -134,6 +141,7 @@ class AlarmGatherer:
 
                 # Trap network errors etc
             try:
+            #if (True):
                 eventsResult = service.events().list(
                     calendarId='primary', timeMin="%sZ" % (time.isoformat()),
                     maxResults=2, singleEvents=True,
@@ -146,26 +154,35 @@ class AlarmGatherer:
                 pickle.dump(events, open( 'calender.cache', "wb" ) )
 
             except Exception as e:
+            #if (False):
                 log.exception("Could not Get Next Event. Using last result")
                 events = self.eventCache
 
             finally: # Always need to update the timeout
+            #if (True):
                 self.getNextEventTimeout = datetime.datetime.now() + datetime.timedelta(hours=4)
 
       else:
         log.debug("Using event cache")
         events = self.eventCache
 
-      try:
-          for event in events:
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            log.debug(start)
-            log.debug(event['summary'])
-      except Exception as e:
-          log.debug("failed displaying alarm info")
+      # when no events are available
+      if len(events) == 0:
+          events = None
+          log.debug("no events returned")
+      else:
+          try:
+              for event in events:
+                start = event['start'].get('dateTime', event['start'].get('date'))
+                log.debug(start)
+                log.debug(event['summary'])
+          except Exception as e:
+              log.debug("failed displaying alarm info")
+              events = None
 
-      #~ self.getNextEventTimeout = datetime.datetime.now() + datetime.timedelta(hours=1)
-      log.info("Event cache timeout %s", self.getNextEventTimeout)
+          #~ self.getNextEventTimeout = datetime.datetime.now() + datetime.timedelta(hours=1)
+          log.info("Event cache timeout %s", self.getNextEventTimeout)
+
       if events == None:
         return None
       else:
@@ -223,12 +240,12 @@ class AlarmGatherer:
 if __name__ == '__main__':
    print "Running credential check"
 
-   try:
-        import argparse
-        flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
-   except ImportError:
-        flags = None
-   a = self.get_credentials()
+   #try:
+   import argparse
+   flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
+   #except ImportError:
+   #     flags = None
+   a = get_credentials()
    try:
       if not a.checkCredentials():
          raise Exception("Credential check failed")

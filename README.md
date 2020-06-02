@@ -92,9 +92,21 @@ openssl req -new -x509 -keyout serverssl.key -out serverssl.crt -days 365 -nodes
   - Change to the "Credentials" section
   - Click "Create credentials" at the top and choose "OAuth Client ID"
   - Set Application Type "Other"
-  - Give it a name e.g. PiCLock" and click create
+  - Give it a name e.g. PiClock" and click create
 - Copy and rename the file `~/piclock/config/client_secret.json.txt` to `\~/piclock/calendar-python.json` (Note change of name)
 - Edit the file calendar-python.json and fillin &lt;CLIENTID&gt; and &lt;CLIENTSECRET&gt;
+- Run the code as follows
+~~~
+sudo python piclock.py  --noauth_local_webserver
+~~~
+- Copy the displayed URL and past into your web browser
+- Follow the prompts to allow accesss
+- Copy and Paste the authorisation code back into piclock
+- You can then stop piclock using CRTL+C and start it normally
+
+Note
+- If the clientid or client secret change, delete your previously saved credentials
+- at ~/.credentials/calendar-python.json
 
 ## TFT Configuration
 
