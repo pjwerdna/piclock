@@ -198,6 +198,9 @@ class AlarmPi:
       self.settings = Settings.Settings()
       self.settings.setup()
 
+      # Set Log level from settings
+      log.setLevel(self.settings.getInt('DEBUGLEVEL'))
+
       log.info("Loading brightness control")
       self.bright = brightnessthread.BrightnessThread(self.settings)
       self.bright.setDaemon(True)

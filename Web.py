@@ -16,7 +16,11 @@ import json
 
 # 22/03/2020 - MOved weather Underground key to settings
 # 27/03/2020 - Allow weather Underground key to be blank
-
+# 31/07/2020 - Should now pickup the local IP if it get set or changed after startup
+# 08/07/2020 - Might now return playing preset
+#              fsapi now returns playing streem for .name
+# 09/08/2020 - Added separate volumes for each daily alarm
+# 09/08/2020 - Added debug level via settings web page
 
 # fsapi based on
 # https://github.com/flammy/fsapi
@@ -179,6 +183,21 @@ def Getradioselector(requiredID,requiredSelection):
     radioselector += '</select>'
     return radioselector
 
+def Getvolumelist(requiredID,requiredSelection):
+    volumeselector = '<select id=' + requiredID + ' name="' + requiredID + '">'
+    for volumelevel in range(20, 101):
+        if volumelevel == requiredSelection:
+            volumeselector += '<option selected value="' + str(volumelevel) +'">' + str(volumelevel) +'%</option>\n'
+        else:
+            volumeselector += '<option value="' + str(volumelevel) +'">' + str(volumelevel) +'%</option>\n'
+    #~ log.info("requiredSelection '%s'", requiredSelection)
+    #if (requiredSelection == "None") or (requiredSelection == ""):
+    #    radioselector += '<option selected value="None">None</option>\n'
+    #else:
+    #    radioselector += '<option value="None">None</option>\n'
+    volumeselector += '</select>'
+    return volumeselector
+
 def userLoggedout(sessioninfo):
     try:
         temp = sessioninfo.user
@@ -196,6 +215,20 @@ def GetUser(sessioninfo):
         return temp
     except:
         return ""
+
+def GetIPList():
+      global iplist
+
+      iplist = ["127.0.0.1"]
+      NetworksIP = GetIPForNetwork("eth0")
+      if (NetworksIP != ""):
+        log.info("Have LAN Connection %s", NetworksIP)
+        iplist.append(NetworksIP)
+
+      NetworksIP = GetIPForNetwork("wlan0")
+      if (NetworksIP != ""):
+        log.info("Have Wifi Connection %s", NetworksIP)
+        iplist.append(NetworksIP)
 
 class static:
     def GET(self, media, file):
@@ -448,6 +481,15 @@ class set:
             value=settings.getorset('WUG_KEY',''),
             size=10,
          ),
+         #form.Textbox("DEBUG_LEVEL",
+         #   description="Debug Level",
+         #   value=settings.getorset('DEBUGLEVEL',str(log.getEffectiveLevel())),
+         #   size=10,
+         #),
+         form.Dropdown(name="DEBUG_LEVEL",
+            args=[('0','NOTSET'),('10','DEBUG'),('20','INFO'),('30','WARNING'),('40','ERROR'),('50','CRITICAL')],
+            value = str(log.getEffectiveLevel()),
+            ),
      )
 
    def GET(self):
@@ -551,6 +593,19 @@ class set:
          else:
             settings.set('tts_path', form['ttspath'].value)
 
+      if form['DEBUG_LEVEL'].value != settings.get('DEBUGLEVEL'):
+         changes.append("Setting Debug Level %s" % (form['DEBUG_LEVEL'].value))
+
+
+         numeric_level = int(form['DEBUG_LEVEL'].value) #getattr(logging, loglevel.upper(), None)
+         if not isinstance(numeric_level, int):
+            changes.append('Invalid log level: %d' % form['DEBUG_LEVEL'].value)
+         else:
+            # set level
+            settings.set('DEBUGLEVEL', form['DEBUG_LEVEL'].value)
+
+            log.setLevel(settings.getInt('DEBUGLEVEL'))
+
       text = "Configuring settings:<p><ul><li>%s</li></ul>" % ("</li><li>".join(changes))
       # For debugging purposes
       for c in changes:
@@ -577,6 +632,7 @@ class alarms:
       return form.Form(
         #~ Expliots HTML rendering and "feature" of Web.py forms to display text box and dropdown
         #~ on same table row by commenting out the end-of-row + beginning-of-next-row.
+        # Not used I thik
 
         form.Textbox('alarm_weekday_0', description="Monday", post=" <!-- " ,  value=settings.get('alarm_weekday_0'), size="5", maxlength="5"),
         form.Dropdown('alarm_station_0', args = StationList, pre = " -->", description="", value = StationList[int(settings.get('alarm_station_0'))]),
@@ -606,8 +662,9 @@ class alarms:
         AlarmHours = Gethoursselector('alarm_weekday_hours_' + Dayno, int(AlarmTime[:2]))
         AlarmMins  = Getminsselector('alarm_weekday_mins_' + Dayno , int(AlarmTime[3:]))
         AlarmStation = Getradioselector('alarm_station_'+ Dayno, StationList[int(settings.get('alarm_station_' + Dayno))])
+        AlarmVolume = Getvolumelist('alarm_volume_'+ Dayno, int(settings.getorset('alarm_volume_' + Dayno,settings.get('volume'))))
 
-        return AlarmHours, AlarmMins, AlarmStation
+        return AlarmHours, AlarmMins, AlarmStation, AlarmVolume
 
 
    def GET(self):
@@ -660,7 +717,7 @@ class alarms:
       #~ for stationname in Settings.STATIONS:
             #~ StationList.append(stationname['name'])
 
-
+      # Decode alarm settings. Theyre  based round daynames
       daynames = [ "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
       for dayno in range(0,7):
           if user_data['alarm_weekday_hours_' + str(dayno)] + ":" + user_data['alarm_weekday_mins_' + str(dayno)] != settings.get('alarm_weekday_' + str(dayno)):
@@ -672,18 +729,10 @@ class alarms:
             settings.set('alarm_station_' + str(dayno), user_data['alarm_station_' + str(dayno)])
             newstation = StationList[StationList.index(settings.getInt('alarm_station_' + str(dayno)))]
             changes.append("%s Station Set to %s" % (daynames[dayno], newstation))
-
-      #~ daynames = [ "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-      #~ for dayno in range(0,7):
-          #~ if form['alarm_weekday_' + str(dayno)].value != settings.get('alarm_weekday_' + str(dayno)):
-            #~ newtime = form['alarm_weekday_' + str(dayno)].value
-            #~ if (newtime[2]==":") and (len(newtime) == 5) and (newtime[:1].isdecimal()) and (newtime[3:].isdecimal()):
-                #~ changes.append("%s Alarm set to %s" % (daynames[dayno], newtime))
-                #~ settings.set('alarm_weekday_' + str(dayno), newtime)
-          #~ if StationList.index(form['alarm_station_' + str(dayno)].value) != settings.getInt('alarm_station_' + str(dayno)):
-            #~ settings.set('alarm_station_' + str(dayno), form['alarm_station_' + str(dayno)].value)
-            #~ newstation = StationList[StationList.index(settings.getInt('alarm_station_' + str(dayno)))]
-            #~ changes.append("%s Station Set to %s" % (daynames[dayno], newstation))
+          #
+          if user_data['alarm_volume_' + str(dayno)] != settings.get('alarm_volume_' + str(dayno)):
+            settings.set('alarm_volume_' + str(dayno), user_data['alarm_volume_' + str(dayno)])
+            changes.append("%s Volume Set to %s%%" % (daynames[dayno], settings.getInt('alarm_volume_' + str(dayno))))
 
       text = "Configuring alarms:<p><ul><li>%s</li></ul>" % ("</li><li>".join(changes))
       # For debugging purposes
@@ -858,6 +907,7 @@ class api: # returns json describing the Player State
         if (RequesterIP not in iplist):
             if (userLoggedout(session)) :
                 log.info("api Not logged in %s", RequesterIP)
+                GetIPList()
                 raise web.seeother('/signin')
                 # return ("")
 
@@ -1126,6 +1176,17 @@ class fsapi: # returns FS API describing the Player State
                 #~ log.info("Playing : " + newstation)
                 media.playStation(StationList.index(ApiValue))
 
+        elif ApiAction == "netRemote.play.control":
+            if (operation == "SET") :
+                if (FsapiValue == 2):
+                    if alarm.isAlarmSounding():
+                        alarm.stopAlarm()
+                    elif (iStatus == 1): # if playing something, but not an alarm
+                        media.stopPlayer()
+                returnValue = "<value><u8>0</u8></value>"
+            else:
+                returnValue = "<value><u8>0</u8></value>"
+
         elif ApiAction == "stop":
             if (iStatus == 1) or (iStatus == 2):
                 media.stopPlayer()
@@ -1138,7 +1199,10 @@ class fsapi: # returns FS API describing the Player State
 
         elif ApiAction == "netRemote.play.info.name":
             if (operation == "GET") :
-                returnValue = "<value><c8_array>PiClock</c8_array></value>"
+                if (media.playerActiveStationNo() >= 0):
+                    returnValue = "<value><c8_array>" + str(StationList[media.playerActiveStationNo()]) + "</c8_array></value>"
+                else:
+                    returnValue = "<value><c8_array>" + "" + "</c8_array></value>"
             else:
                 returnValue = "<value><u8>0</u8></value>"
 
@@ -1160,7 +1224,8 @@ class fsapi: # returns FS API describing the Player State
                     #~ log.debug("preset %d %s", keyno, stationname['name'])
                 returnValue += "<listend/>\n"
             else:
-                returnValue = "<value><u8>0</u8></value>"
+                # used to return 0
+                returnValue = "<value><u8>" + str(media.playerActiveStationNo()) + "</u8></value>"
 
         elif ApiAction == "netRemote.nav.action.selectPreset":
             if (operation == "SET") :
@@ -1174,15 +1239,17 @@ class fsapi: # returns FS API describing the Player State
 
                     log.info("Playing : " + newstation)
                     log.info("no %d" , int(FsapiValue))
-                    media.playStation(int(FsapiValue)-1)
+                    if (int(FsapiValue) >=0):
+                        media.playStation(int(FsapiValue)-1)
 
                 returnValue = "<value><c8_array>" + newstation + "</c8_array></value>"
             elif (operation == "GET") :
-                returnValue = "<value><c8_array>" + str(int(media.playerActiveStationNo())+1) + "</c8_array></value>"
+                returnValue = "<value><c8_array>" + str(media.playerActiveStationNo()) + "</c8_array></value>"
             else:
                 returnValue = "<value><c8_array>0</c8_array></value>"
 
         elif ApiAction == "netRemote.nav.state":
+            # Menu Navigation
             if (operation == "GET") :
                 returnValue = "<u8>1</u8>"
             if (operation == "SET") :
@@ -1207,6 +1274,7 @@ class fsapi: # returns FS API describing the Player State
 
         elif ApiAction == "netRemote.sys.mode":
             if (operation == "GET") :
+                # Only support Internet Radio
                 returnValue = "<value><u32>0</u32></value>"
             else:
                 returnValue = "<value><u32>0</u32></value>"
@@ -1270,6 +1338,21 @@ class fsapi: # returns FS API describing the Player State
 
                 settings.set('volume',NewVolume)
                 returnValue = "<value><u8>"+str(int(NewVolume/5))+"</u8></value>"
+
+        elif ApiAction == "netRemote.sys.audio.volumepercent":
+            if (operation == "GET") :
+                returnValue = "<value><u8>"+str(settings.getInt('volume'))+"</u8></value>"
+                log.debug("volume %s", returnValue)
+            elif (operation == "SET") :
+                log.debug("volume %s", FsapiValue)
+                NewVolume = int(FsapiValue)
+                if (NewVolume > 100):
+                    NewVolume = 100
+                elif (NewVolume < 0):
+                    NewVolume = 0
+
+                settings.set('volume',str(NewVolume))
+                returnValue = "<value><u8>"+str(int(NewVolume))+"</u8></value>"
 
         elif (ApiAction == "netRemote.sys.power"):
             # or ((ApiAction == "off") and( ApiValue == "alarm")):
@@ -1405,16 +1488,18 @@ class WebApplication(threading.Thread):
    def run(self):
       global iplist
 
-      iplist = ["127.0.0.1"]
-      NetworksIP = GetIPForNetwork("eth0")
-      if (NetworksIP != ""):
-        log.info("Have LAN Connection %s", NetworksIP)
-        iplist.append(NetworksIP)
+      #iplist = ["127.0.0.1"]
+      #NetworksIP = GetIPForNetwork("eth0")
+      #if (NetworksIP != ""):
+      #  log.info("Have LAN Connection %s", NetworksIP)
+      #  iplist.append(NetworksIP)
 
-      NetworksIP = GetIPForNetwork("wlan0")
-      if (NetworksIP != ""):
-        log.info("Have Wifi Connection %s", NetworksIP)
-        iplist.append(NetworksIP)
+      #NetworksIP = GetIPForNetwork("wlan0")
+      #if (NetworksIP != ""):
+      #  log.info("Have Wifi Connection %s", NetworksIP)
+      #  iplist.append(NetworksIP)
+
+      GetIPList()
 
       log.debug("Starting up https web server")
 

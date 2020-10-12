@@ -7,6 +7,9 @@ import logging
 import os
 import pickle
 
+# Updates
+# 13/08/2020 - MInor change to even cache timeout message
+# 12/10/2020 - Shows Start and End time for Google Events
 
 #from apiclient.discovery import build
 #from oauth2client.file import Storage
@@ -174,14 +177,14 @@ class AlarmGatherer:
           try:
               for event in events:
                 start = event['start'].get('dateTime', event['start'].get('date'))
-                log.debug(start)
-                log.debug(event['summary'])
+                finish = event['end'].get('dateTime', event['end'].get('date'))
+                log.debug("%s to %s is '%s'", start, finish, event['summary'])
           except Exception as e:
               log.debug("failed displaying alarm info")
               events = None
 
           #~ self.getNextEventTimeout = datetime.datetime.now() + datetime.timedelta(hours=1)
-          log.info("Event cache timeout %s", self.getNextEventTimeout)
+          log.debug("Next Event cache timeout %s", self.getNextEventTimeout)
 
       if events == None:
         return None

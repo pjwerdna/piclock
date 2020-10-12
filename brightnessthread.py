@@ -43,9 +43,9 @@ class BrightnessThread(threading.Thread):
       # Turn on brightness PWM
       self.pwmtftbrightness = pigpio.pi()
       self.pwmtftbrightness.set_PWM_range(18,300) #400
-      self.pwmtftbrightness.set_PWM_frequency(18,1000) #400
+      self.pwmtftbrightness.set_PWM_frequency(18,2000) #400
       self.pwmtftbrightness.set_PWM_dutycycle(18,8)
-      self.pwmscale = 4.0
+      self.pwmscale = 4.2
 
       #~ log.debug('Frequency %d', self.pwmtftbrightness.get_PWM_frequency(18))
 

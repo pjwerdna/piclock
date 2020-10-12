@@ -12,6 +12,10 @@ import dateutil.parser
 import logging
 import urllib2
 #from TravelCalculator import TravelCalculator
+# Changes
+# 08/08/2020 - Added separate volumes for each daily alarm
+# 13/08/2020 - Added debug logging for alarm volumes
+# 12/10/2020 - Finally fixed the alarm time change during holidays being missed
 
 log = logging.getLogger('root')
 
@@ -34,6 +38,7 @@ class AlarmThread(threading.Thread):
       self.snoozing = False
 
       self.currentvolume = -1 # no volume increase
+      self.alarmVolume = 50 # random default volume for next alarm
 
       self.settings = Settings #Settings.Settings()
       self.media = Mediaplayer #MediaPlayer.MediaPlayer()
@@ -156,21 +161,61 @@ class AlarmThread(threading.Thread):
 
       log.info("Automatically setting next alarm")
 
-      event = datetime.datetime.now() #pytz.timezone('Europe/London'))
+      # Find next alarm starting with "Now"
+      # If todays next alarm if after NOW use that
+      # otherwise use tomorrows alarm
 
+      nextAlarm = datetime.datetime.now() #pytz.timezone('Europe/London'))
+
+      # find 1 minute past midnight
+      #event = event.replace(hour=int(alarmtime[0]))
+      #event = event.replace(minute=int(alarmtime[1]))
+      #event = event.replace(second=0)
+
+      # Weekday of the next event and alarm time
+      weekday = datetime.datetime.weekday(nextAlarm)
+      # Time for Alarm
+      alarmtime = self.settings.get("alarm_weekday_" + str(weekday)).split(":")
+
+      # put alarm time into event
+      nextAlarm = nextAlarm.replace(hour=int(alarmtime[0]))
+      nextAlarm = nextAlarm.replace(minute=int(alarmtime[1]))
+
+      # if nextalarm is still today, use tomorrows date
+      if nextAlarm < datetime.datetime.now(): #pytz.timezone('Europe/London')):
+        nextAlarm += datetime.timedelta(days=1)
+
+        # Weekday of the next event and alarm time
+        weekday = datetime.datetime.weekday(nextAlarm)
+        # TIme for Alarm
+        alarmtime = self.settings.get("alarm_weekday_" + str(weekday)).split(":")
+
+        # put alarm time into event
+        nextAlarm = nextAlarm.replace(hour=int(alarmtime[0]))
+        nextAlarm = nextAlarm.replace(minute=int(alarmtime[1]))
+
+        # Next event from Calendar thats not today
+        nexteventInfo = self.alarmGatherer.getNextEventDetails(False)
+      else:
+        # Next event from Calendar that might be today
+        nexteventInfo = self.alarmGatherer.getNextEventDetails()
+
+
+      # Modify alarm if its on a holiday
       HolidayCommingUp = False
       HolidayModeCommingUp = False
 
 
+      # Work out if next event is a Holiday or maybe setting Holday Mode
       try:
-         # Next event from Calendar
-         nexteventInfo = self.alarmGatherer.getNextEventDetails()
+
          if (nexteventInfo == None):
-             log.debug("no Holidays Listed")
+             log.debug("no Events Listed")
 
          else:
              # The time of the next Holiday on our calendar.
              eventTime = dateutil.parser.parse(nexteventInfo['start'].get('dateTime', nexteventInfo['start'].get('date')))
+             eventTimeEnd = dateutil.parser.parse(nexteventInfo['end'].get('dateTime', nexteventInfo['end'].get('date')))
              log.debug("next event %s",eventTime)
 
              # The summary of the next Holiday on our calendar.
@@ -179,24 +224,31 @@ class AlarmThread(threading.Thread):
 
              # if next event summary is holiday
              if (eventsummary.lower() == "holiday"):
+                 log.info("Holiday Time alarm")
                  HolidayCommingUp = True
              if (eventsummary.lower() == "holiday mode"):
+                 log.info("Holiday Mode alarm")
                  HolidayModeCommingUp = True
                  HolidayCommingUp = True
 
       except Exception as e:
          log.exception("Could not obtain Holiday information")
+         # default to an unknown alarm tomorrow
          eventsummary = "Unknown"
+         eventTime = datetime.datetime.now() + datetime.timedelta(days=1)
 
       try:
 
          default = self.alarmGatherer.getDefaultAlarmTime()
 
-         log.debug("alarm start point %s",event)
+         log.debug("alarm start point %s",nextAlarm)
+         log.debug("Alarm date %s", nextAlarm.date())
+         log.debug("Event date %s", eventTime.date())
 
-         weekday = datetime.datetime.weekday(event)
+         weekday = datetime.datetime.weekday(nextAlarm)
 
-         if (HolidayCommingUp == True) and (eventTime.date() == event.date()):
+         # Handle Alarm being within the next Holiday
+         if (HolidayCommingUp == True) and ( nextAlarm.date() >= eventTime.date() ) and ( nextAlarm.date() <= eventTimeEnd.date() ):
              if (HolidayModeCommingUp == True):
                 log.info("Holiday mode enabled, won't auto-set alarm as requested")
                 return
@@ -206,25 +258,14 @@ class AlarmThread(threading.Thread):
          else:
              alarmtime = self.settings.get("alarm_weekday_" + str(weekday)).split(":")
 
-         self.nextAlarmStation = self.settings.get("alarm_station_" + str(weekday))
+         # Set station for alarm
+         #self.nextAlarmStation = self.settings.get("alarm_station_" + str(weekday))
+         #self.alarmVolume =self.settings.getInt("alarm_volume_" + str(weekday))
+         # Now done later
 
-         event = event.replace(hour=int(alarmtime[0]))
-         event = event.replace(minute=int(alarmtime[1]))
-         event = event.replace(second=0)
-
-         if event < datetime.datetime.now(): #pytz.timezone('Europe/London')):
-            event += datetime.timedelta(days=1)
-            if (HolidayCommingUp == True) and (eventTime.date() == event.date()):
-                log.info("Holiday comming up, using default wake time")
-                default_wake = self.settings.get("default_wake")
-                alarmtime = [default_wake[:2], default_wake[2:]]
-            else:
-                weekday = datetime.datetime.weekday(event)
-                alarmtime = self.settings.get("alarm_weekday_" + str(weekday)).split(":")
-
-            event = event.replace(hour=int(alarmtime[0]))
-            event = event.replace(minute=int(alarmtime[1]))
-
+         # put alarm time into event
+         nextAlarm = nextAlarm.replace(hour=int(alarmtime[0]))
+         nextAlarm = nextAlarm.replace(minute=int(alarmtime[1]))
 
          #~ log.debug("next alarm %s", event)
 
@@ -243,12 +284,12 @@ class AlarmThread(threading.Thread):
          #~ else:
          self.fromEvent = True
 
-         self.setAlarmTime(event, self.settings.getInt('alarm_station_' + str(weekday)))
+         self.setAlarmTime(nextAlarm, self.settings.getInt('alarm_station_' + str(weekday)), self.settings.getInt("alarm_volume_" + str(weekday)))
          self.settings.set('manual_alarm','') # We've just auto-set an alarm, so clear any manual ones
 
          # Read out the time we've just set
-         hour = event.strftime("%I").lstrip("0")
-         readTime = "%s %s %s" % (hour, event.strftime("%M"), splitNumber(event.strftime("%p")))
+         hour = nextAlarm.strftime("%I").lstrip("0")
+         readTime = "%s %s %s" % (hour, nextAlarm.strftime("%M"), splitNumber(nextAlarm.strftime("%p")))
          if quiet == False:
             self.media.playVoice('An automatic alarm has been set for %s' % (readTime))
 
@@ -291,9 +332,14 @@ class AlarmThread(threading.Thread):
         self.nextAlarmStation = AlarmStation
         self.media.playVoice('Default Alarm Station has Been changed')
 
-   def setAlarmTime(self,alarmTime, AlarmStation = -1):
+   def setAlarmTime(self,alarmTime, AlarmStation = -1, AlarmVolume= -1):
       self.nextAlarm = alarmTime
       self.nextAlarmStation = AlarmStation
+      if (AlarmVolume == -1):
+          self.alarmVolume = self.settings.getInt("minvolume")
+      else:
+          self.alarmVolume = AlarmVolume
+
       log.info("Alarm set for %s", alarmTime)
 
    def clearAlarm(self):
@@ -416,9 +462,11 @@ class AlarmThread(threading.Thread):
               # if we have something to play increase volume
               if currentplayerpos != None:
                   self.currentvolume += 2
-                  if self.currentvolume >= self.settings.getInt('volume'):
-                      self.settings.setVolume(self.settings.getInt('volume'))
+                  if self.currentvolume >= self.alarmVolume: #settings.getInt('volume'):
+                      #self.settings.setVolume(self.settings.getInt('volume'))
+                      self.settings.setVolume(self.alarmVolume)
                       self.currentvolume = -1 # At required volume
+                      log.debug("Reached alarm volume level")
                   else:
                       self.settings.setVolume(self.currentvolume)
 

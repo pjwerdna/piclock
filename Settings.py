@@ -4,6 +4,8 @@ import subprocess
 import logging
 # Changes
 # 1 Rearranged output of "python Settings.py"
+# 09/08/2020 - Added daily alarm volumes & debug level
+# 02/09/2020 - Added minimum volume level
 
 log = logging.getLogger('root')
 
@@ -40,50 +42,59 @@ class Settings:
    # Our default settings for when we create the table
    DEFAULTS= [
       ('alarm_weekday_0','08:35'), # Monday
-      ('alarm_station_0','1'), # Radio station to play
+      ('alarm_station_0','1'),     # Radio station to play
+      ('alarm_volume_0','100'),    # volume to play
       ('alarm_weekday_1','08:35'), # Tuesday
-      ('alarm_station_1','1'), # Radio station to play
+      ('alarm_station_1','1'),     # Radio station to play
+      ('alarm_volume_1','100'),    # volume to play
       ('alarm_weekday_2','08:35'), # Wednesday
-      ('alarm_station_2','1'), # Radio station to play
+      ('alarm_station_2','1'),     # Radio station to play
+      ('alarm_volume_2','100'),    # volume to play
       ('alarm_weekday_3','08:35'), # Thrusday
-      ('alarm_station_3','1'), # Radio station to play
+      ('alarm_station_3','1'),     # Radio station to play
+      ('alarm_volume_3','100'),    # volume to play
       ('alarm_weekday_4','08:35'), # Friday
-      ('alarm_station_4','1'), # Radio station to play
+      ('alarm_station_4','1'),     # Radio station to play
+      ('alarm_volume_4','100'),    # volume to play
       ('alarm_weekday_5','09:35'), # Saturday
-      ('alarm_station_5','0'), # Radio station to play
+      ('alarm_station_5','0'),     # Radio station to play
+      ('alarm_volume_5','100'),    # volume to play
       ('alarm_weekday_6','09:35'), # Sunday
-      ('alarm_station_6','0'), # Radio station to play
+      ('alarm_station_6','0'),     # Radio station to play
+      ('alarm_volume_6','100'),    # volume to play
 
-      ('alarm_timeout','120'), # If the alarm is still going off after this many minutes, stop it
-      ('apipin','123456'),
+      ('alarm_timeout','120'),     # If the alarm is still going off after this many minutes, stop it
+      ('apipin','123456'),         # pin code for fsapi web interface access
       ('brightness_timeout','20'), # Time (secs) after which we should revert to auto-brightness
-      ('brightness_tweak','0'),
+      ('brightness_tweak','0'),    # Allow tweaking brightness (0-99, effectively -50 to 50)
       ('calendar','Calendar@google.local'), # Calendar to gather events from
-      ('clock_colour','255,0,0'), # default clock colour
-      ('clock_format','4'), # 4 or 6 digit clock
+      ('clock_colour','255,0,0'),  # default clock colour
+      ('clock_format','4'),        # 4 or 6 digit clock
       ('clock_font','dseg7modern'), # default font
-      ('default_wake','0815'), # Alarm time for Holidays
-      ('holiday_mode','0'), # Is holiday mode (no auto-alarm setting) enabled?
-      ('gradual_volume','0'), # Gradual volume increase on Alarm
+      ('default_wake','0815'),     # Alarm time for Holidays
+      ('holiday_mode','0'),        # Is holiday mode (no auto-alarm setting) enabled?
+      ('gradual_volume','0'),      # Gradual volume increase on Alarm
       ('location_home','Birmingham, UK'), # Location for home
       ('location_work','London Airport'), # Default location for work (if lookup from event fails)
-      ('manual_alarm',''), # Manual alarm time (default not set)
-      ('max_brightness','100'), # Maximum brightness
-      ('menu_font',''), # default font
-      ('menu_timeout','20'), # Time (secs) after which an un-touched menu should close
-      ('min_brightness','1'), # Minimum brightness
-      ('preempt_cancel','600'), # Number of seconds before an alarm that we're allowed to cancel it
-      ('quiet_reboot','0'), # no speech when starting up (Only used during reboots or restarts of the clock)
-      ('radio_delay','10'), # Delay (secs) to wait for radio to start
-      ('sfx_enabled','1'), # Are sound effects enabled?
-      ('snooze_length','5'), # Time (mins) to snooze for
-      ('station','1'), # Radio station to play
+      ('manual_alarm',''),         # Manual alarm time (default not set)
+      ('max_brightness','100'),    # Maximum brightness
+      ('menu_font',''),            # default font
+      ('menu_timeout','20'),       # Time (secs) after which an un-touched menu should close
+      ('min_brightness','1'),      # Minimum brightness
+      ('preempt_cancel','600'),    # Number of seconds before an alarm that we're allowed to cancel it
+      ('quiet_reboot','0'),        # no speech when starting up (Only used during reboots or restarts of the clock)
+      ('radio_delay','10'),        # Delay (secs) to wait for radio to start
+      ('sfx_enabled','1'),         # Are sound effects enabled?
+      ('snooze_length','5'),       # Time (mins) to snooze for
+      ('station','1'),             # Radio station to play
       ('tts_path','/usr/bin/festival --tts'), # The command we pipe our TTS output into
-      ('weather_location','Slough'), # The location to load weather for
-      ('weather_on_alarm','1'), # Read out the weather on alarm cancel
-      ('volume','100'), # Volume
-      ('wakeup_time','30'), # Time (mins) before event that alarm should be triggered (excluding travel time) (30 mins pre-shift + 45 mins wakeup)
-      ('WUG_KEY',''), # wunderground access key (doesnt work anymore!)
+      ('weather_location','London'), # The location to load weather for
+      ('weather_on_alarm','1'),    # Read out the weather on alarm cancel
+      ('volume','100'),            # Current Volume
+      ('wakeup_time','30'),        # Time (mins) before event that alarm should be triggered (excluding travel time) (30 mins pre-shift + 45 mins wakeup)
+      ('WUG_KEY',''),              # wunderground access key (doesnt work anymore!)
+      ('DEBUGLEVEL','10'),         # default loglevel is debug
+      ('minvolume','55'),          # Minimum allowed volume
    ]
 
    def __init__(self):
@@ -160,7 +171,9 @@ class Settings:
       self.get(key) # So we know if it doesn't exist
 
       if key=="volume":
-         self.setVolume(val)
+          if (int(val)<self.getInt("minvolume")):
+              val = self.getInt("minvolume")
+          self.setVolume(val)
       lock.acquire()
 
       self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',(val,key,))
@@ -182,7 +195,12 @@ class Settings:
       self.conn.close()
 
 if __name__ == '__main__':
+
+
    print "Showing all current settings"
    settings = Settings()
+
+   settings.getorset('minvolume','55')
+
    for s in settings.DEFAULTS:
       print "%s = %s" % (s[0], settings.get(s[0]))

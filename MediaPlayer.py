@@ -45,9 +45,9 @@ class MediaPlayer:
 
    def playerActiveStationNo(self):
       if self.player:
-          return str(self.CurrentStationNo)
+          return self.CurrentStationNo
       else:
-          return "-1"
+          return -1
 
    def soundAlarm(self, alarmThread, Station = -1):
       log.info("Playing alarm")
