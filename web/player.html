@@ -69,6 +69,9 @@ function StatusUpdate(myarr) {
 
 };
 
+function AutoUpdate() {
+PlayControl('status')
+}
 </script>
 <noscript>Your browser does not support JavaScript!</noscript>
 <style>
@@ -115,7 +118,7 @@ th, td {
     <TR><TD style="width:90px;height:40px;text-align:center">Playing</TD>
     <TD id="PlayerStation" style="width:150px;height:50px;;text-align:center">&nbsp;</TD>
     <TD style="text-align:center;padding:2px" rowspan=3 >
-    <img alt="VOL +" onclick="PlayControl('volumechange',+1)" src="static/ic_volume_up_black_48dp.png" value="Volume Up" />
+    <img alt="VOL +" onclick="PlayControl('volumechange',+2)" src="static/ic_volume_up_black_48dp.png" value="Volume Up" />
     <table class="volume" style="width:20px;height:104px">
         <TR><TD style="vertical-align:bottom">
         <table class="volume" id="Volumebar" style="width:16px;background:#0000FF">
@@ -125,7 +128,7 @@ th, td {
         </Table>
         </TD></TR>
     </table>
-    <img alt="VOL -"  onclick="PlayControl('volumechange',-1)" src="static/ic_volume_down_black_48dp.png" value="Volume Down" />
+    <img alt="VOL -"  onclick="PlayControl('volumechange',-2)" src="static/ic_volume_down_black_48dp.png" value="Volume Down" />
     <BR><div id="Volume" ></div>
 
     </TD></TR>
@@ -221,5 +224,6 @@ th, td {
 
 <script language="javascript">
 // fillin whats happending
-PlayControl('status')
+PlayControl('status');
+setInterval(AutoUpdate,10000);
 </script>

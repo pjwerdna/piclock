@@ -18,3 +18,6 @@ CalendarCredentials2.py
 CalendarCredentials.py
 mplayer
 sslconfig.txt
+.vscode/settings.json
+piclock.code-workspace
+remaptest.py

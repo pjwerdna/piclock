@@ -6,6 +6,10 @@
 # radio control (left side)
 
 # 27/03/2020 - Actually uses SCREEN_HEIGHT and SCREEN_WIDTH
+# 18/10/2020 - Blanks the entire volume area to avoid leaving bits behind
+# 18/10/2020 - Moved setting & adding to extra message into a function
+# 26/01/2021 - Moved player monitoring to player Thread
+#              Message creation & store moved to each thread
 
 #from LCDControl.LCDControl import LCDControl
 #import gaugette.rotary_encoder
@@ -24,10 +28,15 @@ import math
 
 log = logging.getLogger('root')
 
-CONTROL_ZONE = 480/6
+
+SCREEN_WIDTH = 480
+SCREEN_HEIGHT = 320
+
+CONTROL_ZONE = SCREEN_WIDTH / 6
 
 import colours
 
+# index meanings for onscreen buttons etx
 KEY_ControlType =0
 KEY_UpButtonarea=1
 KEY_UpButton=2
@@ -45,9 +54,6 @@ KEY_ys = 13
 KEY_yoffset = 14
 KEYSelectAction = 15
 
-SCREEN_WIDTH = 480
-SCREEN_HEIGHT = 320
-
 #
 # Date convenience methods
 #
@@ -63,7 +69,7 @@ def formatDate(dateObj):
 
    return message
 
-
+# Ensure PiTFT is usable
 os.putenv('SDL_VIDEODRIVER','fbcon')
 os.putenv('SDL_FBDEV','/dev/fb1')
 os.putenv('SDL_MOUSEDRV','TSLIB')
@@ -93,13 +99,13 @@ class TFTThread(threading.Thread):
 
       self.settings = Settings #Settings.Settings()
 
+      self.checkmessage = 20 # Time between message updates
+
       #~ os.putenv('SDL_VIDEODRIVER','fbcon')
       #~ os.putenv('SDL_FBDEV','/dev/fb1')
       #~ os.putenv('SDL_MOUSEDRV','TSLIB')
       #~ os.putenv('SDL_MOUSEDEV','/dev/input/touchscreen')
 
-      #~ pygame.init()
-      #~ pygame.mixer.quit()
       self.tftScreen = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT))
       pygame.mouse.set_visible(False)
 
@@ -195,9 +201,15 @@ class TFTThread(threading.Thread):
                 self.segmentheight = 40
 
 
-   def SetExtraMessage(self,NewMessage):
+   def SetExtraMessage(self,NewMessage, CheckInterval = -1):
         self.ExtraMessage = NewMessage
+        if (CheckInterval != -1) :
+            self.checkmessage = CheckInterval
 
+   def AddToExtraMessage(self,NewMessage, CheckInterval = -1):
+        self.ExtraMessage += NewMessage
+        if (CheckInterval != -1) :
+            self.checkmessage = CheckInterval
 
 
    # Original stuff
@@ -255,13 +267,13 @@ class TFTThread(threading.Thread):
             self.CurrentVolume = self.newvolume
             #~ self.VolumeSlider(self.CurrentVolume, colours.GREEN)
         area.append(self.VolumeSlider(self.CurrentVolume, colours.GREEN))
+
      if (ExtraText != ""):
         #if (ExtraText != self.oldExtraText):
             #self.oldExtraText = ExtraText
         lineheight = self.font_normal.get_linesize()
         area.append(pygame.draw.rect(self.tftScreen,colours.BLACK,(0,SCREEN_HEIGHT-lineheight,SCREEN_WIDTH,lineheight)))
             #self.oldExtrawidth = text_surface.get_width()
-
 
         text_surface = self.font_normal.render(ExtraText, True, colour)
         rect = text_surface.get_rect(left=10-self.ExtraTextoffset,bottom=SCREEN_HEIGHT)
@@ -562,6 +574,7 @@ class TFTThread(threading.Thread):
 
     Controls = []
 
+    # Controls along the bottom of the screen
     x = 30
     y = SCREEN_HEIGHT - 80
 
@@ -1101,7 +1114,7 @@ class TFTThread(threading.Thread):
         return currentValues #valueList[SelectedValue]
 
 
-
+   # Scrollable number field
    def DisplayScrollValue(self, x, y, currentValue, minValue = 0, maxValue = 23, colour = colours.WHITE):
      fontlineheight = self.font_large.get_linesize()
      valuewidth, valueheight = self.font_large.size(str(maxValue))
@@ -1321,7 +1334,8 @@ class TFTThread(threading.Thread):
             area = self.VolumeSlider(self.CurrentVolume, colours.GREEN)
             #~ self.SleepTime = 0.1
         else:
-            area = self.VolumeSlider(self.CurrentVolume, colours.BLACK)
+            # Blank the entire volume area
+            area = self.VolumeSlider(100, colours.BLACK)
             #~ self.SleepTime = 1
         pygame.display.update(area)
 
@@ -1382,15 +1396,15 @@ class TFTThread(threading.Thread):
    def ControlAlarm(self, colour = colours.WHITE):
 
     def StopAlarm(Control):
-        self.ExtraMessage = "Stopping Alarm"
-        checkmessage = 20
+        self.SetExtraMessage("Stopping Alarm",20)
+        #checkmessage = 20
         self.alarmThread.stopAlarmTrigger()
         self.MenuWaiting = False
         return "Stopping Alarm"
 
     def SnoozeAlarm(Control):
-        self.ExtraMessage = "Snoozing Alarm"
-        checkmessage = 20
+        self.SetExtraMessage("Snoozing Alarm",20)
+        #checkmessage = 20
         self.alarmThread.snooze()
         self.MenuWaiting = False
         return "Stopping Alarm"
@@ -1436,7 +1450,7 @@ class TFTThread(threading.Thread):
 
       self.SleepTime = float(0.1)
       volumedragstart = -1
-      checkmessage = 20
+      self.checkmessage = 20
       lastplayerpos = 1 # media player position
       NoneCount = 0
 
@@ -1519,9 +1533,9 @@ class TFTThread(threading.Thread):
 
                         if (volumedragstart <> -1): # volume was being dragged
                                 volumedragstart = -1
+                                self.lcd.showvolume(False)
                                 self.settings.set('volume',self.lcd.newvolume)
                                 self.lcd.CurrentVolume = self.lcd.newvolume
-                                self.lcd.showvolume(False)
 
                         elif self.alarmThread.isAlarmSounding():
                                 self.ControlAlarm()
@@ -1531,7 +1545,7 @@ class TFTThread(threading.Thread):
 
                             if (my > SCREEN_HEIGHT - CONTROL_ZONE): # bottom tap
                                 #~ self.caller.clockMessage("Discovering Weather...")
-                                self.ExtraMessage = "Discovering Weather..."
+                                self.SetExtraMessage("Discovering Weather...",20)
                                 LocalWeather = self.weather.getWeather()
 
                                 try:
@@ -1547,14 +1561,14 @@ class TFTThread(threading.Thread):
                                     message = "No weather is available"
 
                                 #~ self.caller.clockMessage(message)
-                                self.ExtraMessage = message
+                                self.SetExtraMessage(message,20)
                                 log.info("Weather Message = %s", message)
-                                checkmessage = len(message) * 3 #110
+                                self.checkmessage = len(message) * 3 #110
 
 
                             else:
                                 action = self.menu.DisplayMenu()
-                                checkmessage = 1
+                                self.checkmessage = 1
                                 if (action == "Exit"):
                                     self.pausedState = True
                                     self.caller.stop(0)
@@ -1562,7 +1576,7 @@ class TFTThread(threading.Thread):
 
                         elif (mx < CONTROL_ZONE): # left side
                             self.ControlRadio()
-                            checkmessage = 1
+                            self.checkmessage = 1
 
                    elif (event.type is MOUSEBUTTONDOWN) and (mx > SCREEN_WIDTH - CONTROL_ZONE): # Start Volume drag
 
@@ -1595,9 +1609,9 @@ class TFTThread(threading.Thread):
                                 self.lcd.newvolume = newvolume
                                 pygame.display.update(area)
 
-            checkmessage -= 1
-            if (checkmessage <= 0):
-                checkmessage = 200
+            self.checkmessage -= 1
+            if (self.checkmessage <= 0):
+                self.checkmessage = 200
                 #self.caller.clockMessage(self.alarmThread.getMenuLine())
 
                 message = ""
@@ -1608,8 +1622,10 @@ class TFTThread(threading.Thread):
                    #~ message += ", Wakey wakey!"
                    #~ continue
 
-                if self.media.playerActive(): # self.menu.backgroundRadioActive():
-                    checkmessage = 10
+                message += self.media.message
+
+                if False and self.media.playerActive(): # self.menu.backgroundRadioActive():
+                    self.checkmessage = 10
                     try:
                         currentplayerpos = self.media.player.stream_pos
                         if (currentplayerpos > lastplayerpos) and (currentplayerpos <> None):
@@ -1630,11 +1646,10 @@ class TFTThread(threading.Thread):
                         #~ NoneCount += 1
                         #~ lastplayerpos = currentplayerpos
 
-                if self.alarmThread.isAlarmSounding():
-                   message += ", Wakey wakey!"
-                   #~ if NoneCount == 5:
-                       #~ log.info("NoneCount = 5, Snoozing for 1 minute")
-                       #~ self.alarmThread.snoozefor()
+                if self.alarmThread.message != "":
+                    message += self.alarmThread.message
+                    #if self.alarmThread.isAlarmSounding():
+                    #   message += ", Wakey wakey!"
 
                 else:
                     message += ", " + self.alarmThread.getMenuLine()
@@ -1644,12 +1659,13 @@ class TFTThread(threading.Thread):
 
                 if message[0] == ",":
                     message = message[2:]
-                self.ExtraMessage = message
+                self.SetExtraMessage(message)
                 #~ self.caller.clockMessage(message)
 
 
          except:
             log.exception("Error in LcdThread loop")
+            pygame.display.quit()
             #self.stopping=True
             self.caller.stop()
 

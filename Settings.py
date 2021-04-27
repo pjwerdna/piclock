@@ -6,6 +6,11 @@ import logging
 # 1 Rearranged output of "python Settings.py"
 # 09/08/2020 - Added daily alarm volumes & debug level
 # 02/09/2020 - Added minimum volume level
+# 02/11/2020 - Added proper volume percentage calls (used by web.py)
+#              Added class functions for alarmFromPercent, alarmToPercent and remap
+#              Should keep volume and volumepercent in step rounding permitting
+# 03/11/2020 - Changed default volume and volumepercent to minimum
+# 20/04/2021 - SetVolumePercent nolonger converts its parameter to a percentage as it already should be one
 
 log = logging.getLogger('root')
 
@@ -90,11 +95,12 @@ class Settings:
       ('tts_path','/usr/bin/festival --tts'), # The command we pipe our TTS output into
       ('weather_location','London'), # The location to load weather for
       ('weather_on_alarm','1'),    # Read out the weather on alarm cancel
-      ('volume','100'),            # Current Volume
+      ('volume','55'),            # Current Volume
       ('wakeup_time','30'),        # Time (mins) before event that alarm should be triggered (excluding travel time) (30 mins pre-shift + 45 mins wakeup)
       ('WUG_KEY',''),              # wunderground access key (doesnt work anymore!)
       ('DEBUGLEVEL','10'),         # default loglevel is debug
       ('minvolume','55'),          # Minimum allowed volume
+      ('volumepercent','0'),     # Current volume as a percentage where 0% is minvolume
    ]
 
    def __init__(self):
@@ -156,8 +162,6 @@ class Settings:
          log.warn("Could not fetch %s as integer, value was [%s], returning 0",key,self.get(key))
          return 0
 
-      log.info("get %s",key)
-
    def getInt(self,key):
       try:
          return int(self.get(key))
@@ -165,42 +169,106 @@ class Settings:
          log.warn("Could not fetch %s as integer, value was [%s], returning 0",key,self.get(key))
          return 0
 
-      log.info("get %s",key)
-
    def set(self,key,val):
       self.get(key) # So we know if it doesn't exist
 
-      if key=="volume":
-          if (int(val)<self.getInt("minvolume")):
-              val = self.getInt("minvolume")
-          self.setVolume(val)
-      lock.acquire()
+      try:
+          if key=="volume":
+              if (int(val)<self.getInt("minvolume")):
+                  val = self.getInt("minvolume")
 
-      self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',(val,key,))
-      self.conn.commit()
-      lock.release()
+          lock.acquire()
+          self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',(val,key,))
+          self.conn.commit()
+          lock.release()
 
-   #~ def setdata(self,key,val):
-      #~ lock.acquire()
+          if key=="volume": # minvolume% to 100%
+              newvol = self.volumeRangeToPercent(int(val))
+              self.setVolume(int(val))
+              lock.acquire()
+              self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',('volumepercent',newvol))
+              self.conn.commit()
+              lock.release()
 
-      #~ self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',(sqlite3.Binary(val),key,))
-      #~ self.conn.commit()
-      #~ lock.release()
+          elif key=="volumepercent": # 0 to 100% (mapped as minvolume% to 100%)
+              newvol = self.volumePercentToRange(int(val))
+              self.setVolume(int(val))
+              lock.acquire()
+              self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',('volume',newvol))
+              self.conn.commit()
+              lock.release()
 
-   def setVolume(self,val):
-      subprocess.Popen("%s %s" % (self.VOL_CMD,val), stdout=subprocess.PIPE, shell=True)
-      log.info("Volume adjusted to %s", val)
+
+      except: # catch *all* exceptions
+            e = sys.exc_info()[0]
+            log.error("Error: %s" , e)
+            log.warn("Failure setting %s as [%s], returning 0",key,val)
+
+   def setVolume(self,val): # 0 to 100% mapped -> minvolume% to 100%
+      actualVolume = self.volumePercentToRange(val)
+      subprocess.Popen("%s %s" % (self.VOL_CMD,actualVolume), stdout=subprocess.PIPE, shell=True)
+      log.info("Volume adjusted to %s, %s%%", val, actualVolume)
+
+   # Convert percentage to usable range
+   def volumePercentToRange(self,AlarmValue):
+        return self.remap(AlarmValue,0,100,self.getInt("minvolume"),100)
+
+   # Convert usable range to percentage
+   def volumeRangeToPercent(self,AlarmValue):
+        return self.remap(AlarmValue,self.getInt("minvolume"),100,0,100)
+
+   def remap(self, x, oMin, oMax, nMin, nMax ):
+        # Map x which is in oMin to oMax to the range nMIn to nMax
+
+        try:
+            #range check
+            if oMin == oMax:
+                print "Warning: remap: Zero input range"
+                return x
+
+            if nMin == nMax:
+                print "Warning: remap: Zero output range"
+                return x
+
+            #check reversed input range
+            reverseInput = False
+            oldMin = min( oMin, oMax )
+            oldMax = max( oMin, oMax )
+            if not oldMin == oMin:
+                reverseInput = True
+
+            #check reversed output range
+            reverseOutput = False
+            newMin = min( nMin, nMax )
+            newMax = max( nMin, nMax )
+            if not newMin == nMin :
+                reverseOutput = True
+
+            portion = (x-oldMin)*(newMax-newMin)/(oldMax-oldMin)
+            if reverseInput:
+                portion = (oldMax-x)*(newMax-newMin)/(oldMax-oldMin)
+
+            result = portion + newMin
+            if reverseOutput:
+                result = newMax - portion
+
+        except: # catch *all* exceptions
+            e = sys.exc_info()[0]
+            log.error("Error: in remap %s" , e)
+            result = 0
+
+        return result
 
    def __del__(self):
       self.conn.close()
 
 if __name__ == '__main__':
 
-
    print "Showing all current settings"
    settings = Settings()
 
-   settings.getorset('minvolume','55')
+   #settings.getorset('minvolume','55')
+   #settings.getorset('volumepercent',remap(settings.getInt("volume"),settings.getInt("minvolume"),100,0,100))
 
    for s in settings.DEFAULTS:
       print "%s = %s" % (s[0], settings.get(s[0]))

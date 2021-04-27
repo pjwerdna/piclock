@@ -1,8 +1,17 @@
+# Plays radio stations and alarms
+#
+# Normally a radio station, but a default mp3 if the station fails to start
+
+
+# 18/10/220 - Added restartPlayer so AlarmThread can do easy restarts
+# 26/01/2021 - Moved player monitoring to player Thread
+
 import time
 from mplayer import Player
 import Settings
 import subprocess
 import logging
+import threading
 
 # for mplayer testing
 import sys
@@ -18,15 +27,18 @@ PANIC_ALARM = '/home/pi/Music/BrightSideOfLife.mp3'
 PANIC_ALARM = '/home/pi/Music/always look on the bright side.mp3'
 FX_DIRECTORY = '/root/sounds/'
 
-class MediaPlayer:
+class MediaPlayer(threading.Thread):
 
    def __init__(self):
+      threading.Thread.__init__(self)
       self.settings = Settings.Settings()
       self.player = False
       self.effect = False
       self.CurrentStation = ""
       self.CurrentStationNo = -1
       self.CurrentURL = ""
+      self.stopping = False
+      self.message = ""
 
    def playerActive(self):
       return self.player!=False
@@ -90,7 +102,7 @@ class MediaPlayer:
       self.CurrentStationNo = station
       self.CurrentURL = stationinfo['url']
 
-   def playStationURL(self,stationName, StationURL):
+   def playStationURL(self,stationName, StationURL, StationNo = -1):
 
       log.info("Playing station %s", stationName)
       log.debug("Playing URL %s", StationURL)
@@ -98,7 +110,7 @@ class MediaPlayer:
       self.player.loadlist(StationURL)
       self.player.loop = 0
       self.CurrentStation = stationName
-      self.CurrentStationNo = -1
+      self.CurrentStationNo = StationNo
       self.CurrentURL = StationURL
 
    def playMedia(self,file,loop=-1):
@@ -148,6 +160,75 @@ class MediaPlayer:
          return self.player.paused
       else:
          return True # not running actually!
+
+   def restartPlayer(self):
+      log.info("Player Restarting")
+      self.stopPlayer()
+      time.sleep(2)
+      self.playStationURL(self.CurrentStation, self.CurrentURL, self.CurrentStationNo)
+
+   def run(self):
+
+      self.SleepTime = float(0.1)
+      lastplayerpos = 1 # media player position
+      NoneCount = 0
+      checkmessage = 50
+
+      log.info("Player thread started")
+
+      while(not self.stopping):
+         time.sleep(self.SleepTime)
+
+         try:
+
+            checkmessage -= 1
+            if (checkmessage <= 0):
+               checkmessage = 25
+
+               if self.playerActive(): # self.menu.backgroundRadioActive():
+                  checkmessage = 10
+                  try:
+                     currentplayerpos = self.player.stream_pos
+                     if (currentplayerpos > lastplayerpos) and (currentplayerpos <> None):
+                           self.message = ", Radio Playing"
+                           #~ NoneCount = 0
+                     elif (currentplayerpos == None) or (lastplayerpos == -1):
+                           log.info("last %s, current pos %s",lastplayerpos, currentplayerpos) #, self.media.player.stream_length)
+                           self.message = ", Radio Buffering"
+                           #~ if (lastplayerpos == 0) and (currentplayerpos == None):
+                               #~ NoneCount += 1
+                     else:
+                           self.message = ", Radio Paused"
+                           log.info("last %s, current pos %s ",lastplayerpos, currentplayerpos) #, self.media.player.stream_length)
+
+                     lastplayerpos = currentplayerpos
+
+
+                  except Exception as e: # stream not valid I guess
+                     log.error("Error: %s" , e)
+                     self.message = ", Radio Erroring"
+                     #~ NoneCount += 1
+                     #~ lastplayerpos = currentplayerpos
+
+                  #try:
+                  #   metadata = self.player.metadata or {}
+                  #   log.info("Track %s", metadata.get('track', ''))
+                  #   log.info("Comment %s", metadata.get('comment', ''))
+                  #   log.info("artist %s", metadata.get('artist', ''))
+                  #   log.info("album %s", metadata.get('album', ''))
+
+                  #except Exception as e: # stream not valid I guess
+                  #   log.error("metadata error: %s" , e)
+
+
+               else:
+                  self.message = ""
+
+         except:
+            log.exception("Error in Media loop")
+            self.stopping = True
+            self.message = ", Errored"
+
 
 if __name__ == '__main__':
     print "Showing all current settings"

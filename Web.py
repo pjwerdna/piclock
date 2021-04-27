@@ -21,6 +21,10 @@ import json
 #              fsapi now returns playing streem for .name
 # 09/08/2020 - Added separate volumes for each daily alarm
 # 09/08/2020 - Added debug level via settings web page
+# 02/11/2020 - Added proper volume percentage for api (web gui) and fsapi
+#              Should keep volume and volumepercent in step rounding permitting
+#              Home page of webserver updates every 10 seconds
+# 27/04/2021 - Fixed volume reading and writing
 
 # fsapi based on
 # https://github.com/flammy/fsapi
@@ -916,9 +920,7 @@ class api: # returns json describing the Player State
         ApiAction = user_data.action
         ApiValue = user_data.value
 
-        log.debug("API Action = %s" , ApiAction)
-        log.debug("API ApiValue = %s", ApiValue)
-
+        log.debug("API Action. ApiValue = %s, %s" , ApiAction, ApiValue)
 
         if media.playerActive():
             iStatus = 1
@@ -976,14 +978,14 @@ class api: # returns json describing the Player State
             #~ MainLoop.setBrightnessTweak(MainLoop.getBrightnessTweak() -Change)
 
         elif ApiAction == "volumechange":
-            NewVolume = settings.getInt('volume') + int(ApiValue)
+            NewVolume = settings.getInt('volumepercent') + int(ApiValue)
 
             if (NewVolume > 100):
                 NewVolume = 100
             elif (NewVolume < 0):
                 NewVolume = 0
 
-            settings.set('volume',NewVolume)
+            settings.set('volumepercent',NewVolume)
 
         elif (ApiAction == "cancelalarm") or ((ApiAction == "off") and( ApiValue == "alarm")):
             alarm.stopAlarm()
@@ -1035,7 +1037,7 @@ class api: # returns json describing the Player State
 
         elif ApiAction == "off":
             if ApiAction == "volume":
-                NewVolume = settings.getInt('volume') - int(1)
+                NewVolume = settings.getInt('volumepercent') - int(1)
 
                 if (NewVolume > 100):
                     NewVolume = 100
@@ -1045,7 +1047,7 @@ class api: # returns json describing the Player State
 
         elif ApiAction == "on":
             if ApiAction == "volume":
-                NewVolume = settings.getInt('volume') + int(1)
+                NewVolume = settings.getInt('volumepercent') + int(1)
 
                 if (NewVolume > 100):
                     NewVolume = 100
@@ -1092,7 +1094,7 @@ class api: # returns json describing the Player State
 
 
         Statusjson = { 'Status': PlayerStatus[iStatus], 'Station': CurrentStation, 'Brightness' : brightnessthread.getBrightnessTweak(),
-            'Volume' : settings.getInt('volume'), 'AlarmState': AlarmState, 'AlarmTIme':AlarmTime, 'AlarmStation':AlarmStation, 'NextAlarmType' : NextAlarmType}
+            'Volume' : settings.getInt('volumepercent'), 'AlarmState': AlarmState, 'AlarmTIme':AlarmTime, 'AlarmStation':AlarmStation, 'NextAlarmType' : NextAlarmType}
 
         web.header('Content-Type','application/json')
         return json.dumps(Statusjson)
@@ -1130,13 +1132,11 @@ class fsapi: # returns FS API describing the Player State
             ApiAction = operation[14:]
             operation = "LIST_GET_NEXT"
 
-        #log.debug("api %s", ApiAction)
-        log.debug("DO \"%s\" %s", operation, ApiAction)
         #log.debug("Pin %s", Fsapipin)
 
-        if ( operation == "CREATE_SESSION"):
-            returnValue = "<sessionId>123456789</sessionId>"
-            #returnValue = "<c8_array>123456789</c8_array>"
+        #if ( operation == "CREATE_SESSION"):
+        #    returnValue = "<sessionId>123456789</sessionId>"
+        #    #returnValue = "<c8_array>123456789</c8_array>"
 
         if (RequesterIP not in iplist) and (Fsapipin != settings.getorset('apipin',"123456")):
             if (userLoggedout(session)) :
@@ -1150,86 +1150,26 @@ class fsapi: # returns FS API describing the Player State
         if media.playerActive():
             iStatus = 1
             if media.playerPaused():
+
                 iStatus = 2
         else:
             iStatus = 0
 
-        if ( operation == "CREATE_SESSION"):
-            returnValue = "<sessionId>123456789</sessionId>"
-            #returnValue = "<c8_array>123456789</c8_array>"
-        elif ( operation == "DELETE_SESSION"):
-            returnValue = "<value>0</value>"
-            #returnValue = "<c8_array>123456789</c8_array>"
-        elif   (ApiAction == "play"): # or (ApiAction == "play" and ApiAction == "radio"):
-            #~ StationList = []
-            #~ for stationname in Settings.STATIONS:
-                #~ StationList.append(stationname['name'])
+        log.debug("fsapi \"%s\" %s, apivalue=%s", operation, ApiAction, FsapiValue)
 
-            newstation = StationList[StationList.index(ApiValue)]
-            if (iStatus == 0) or (media.playerActiveStation() <> newstation):
-                # Need to stop the alarm or it will retrigger
-                if alarm.isAlarmSounding():
-                    alarm.stopAlarm()
-                elif (iStatus == 1): # if playing something, but not an alarm
-                    media.stopPlayer()
+        try:
+            if ( operation == "CREATE_SESSION"):
+                returnValue = "<sessionId>123456789</sessionId>"
+                #returnValue = "<c8_array>123456789</c8_array>"
+            elif ( operation == "DELETE_SESSION"):
+                returnValue = "<value>0</value>"
+                #returnValue = "<c8_array>123456789</c8_array>"
+            elif   (ApiAction == "play"): # or (ApiAction == "play" and ApiAction == "radio"):
+                #~ StationList = []
+                #~ for stationname in Settings.STATIONS:
+                    #~ StationList.append(stationname['name'])
 
-                #~ log.info("Playing : " + newstation)
-                media.playStation(StationList.index(ApiValue))
-
-        elif ApiAction == "netRemote.play.control":
-            if (operation == "SET") :
-                if (FsapiValue == 2):
-                    if alarm.isAlarmSounding():
-                        alarm.stopAlarm()
-                    elif (iStatus == 1): # if playing something, but not an alarm
-                        media.stopPlayer()
-                returnValue = "<value><u8>0</u8></value>"
-            else:
-                returnValue = "<value><u8>0</u8></value>"
-
-        elif ApiAction == "stop":
-            if (iStatus == 1) or (iStatus == 2):
-                media.stopPlayer()
-
-        elif ApiAction == "netRemote.sys.info.friendlyName":
-            if (operation == "LIST_GET_NEXT") :
-                returnValue = "<value><c8_array>PiClock</c8_array></value>"
-            else:
-                returnValue = "<value><u8>0</u8></value>"
-
-        elif ApiAction == "netRemote.play.info.name":
-            if (operation == "GET") :
-                if (media.playerActiveStationNo() >= 0):
-                    returnValue = "<value><c8_array>" + str(StationList[media.playerActiveStationNo()]) + "</c8_array></value>"
-                else:
-                    returnValue = "<value><c8_array>" + "" + "</c8_array></value>"
-            else:
-                returnValue = "<value><u8>0</u8></value>"
-
-        elif ApiAction == "netRemote.play.info.text":
-            if (operation == "GET") :
-                returnValue = "<value><c8_array>" + tft.ExtraMessage + "</c8_array></value>"
-            else:
-                returnValue = "<value><u8>0</u8></value>"
-
-        elif ApiAction == "netRemote.nav.presets/-1":
-            if (operation == "LIST_GET_NEXT") :
-                keyno = 1
-                returnValue = ""
-                for stationname in Settings.STATIONS:
-                    returnValue += "<item key=\"" + str(keyno) + "\">\n"
-                    returnValue += "<field name=\"name\"><c8_array>" + stationname['name'] + "</c8_array></field>\n"
-                    returnValue += "</item>\n"
-                    keyno += 1
-                    #~ log.debug("preset %d %s", keyno, stationname['name'])
-                returnValue += "<listend/>\n"
-            else:
-                # used to return 0
-                returnValue = "<value><u8>" + str(media.playerActiveStationNo()) + "</u8></value>"
-
-        elif ApiAction == "netRemote.nav.action.selectPreset":
-            if (operation == "SET") :
-                newstation = StationList[int(FsapiValue)-1]
+                newstation = StationList[StationList.index(ApiValue)]
                 if (iStatus == 0) or (media.playerActiveStation() <> newstation):
                     # Need to stop the alarm or it will retrigger
                     if alarm.isAlarmSounding():
@@ -1237,186 +1177,257 @@ class fsapi: # returns FS API describing the Player State
                     elif (iStatus == 1): # if playing something, but not an alarm
                         media.stopPlayer()
 
-                    log.info("Playing : " + newstation)
-                    log.info("no %d" , int(FsapiValue))
-                    if (int(FsapiValue) >=0):
-                        media.playStation(int(FsapiValue)-1)
+                    #~ log.info("Playing : " + newstation)
+                    media.playStation(StationList.index(ApiValue))
 
-                returnValue = "<value><c8_array>" + newstation + "</c8_array></value>"
-            elif (operation == "GET") :
-                returnValue = "<value><c8_array>" + str(media.playerActiveStationNo()) + "</c8_array></value>"
-            else:
-                returnValue = "<value><c8_array>0</c8_array></value>"
-
-        elif ApiAction == "netRemote.nav.state":
-            # Menu Navigation
-            if (operation == "GET") :
-                returnValue = "<u8>1</u8>"
-            if (operation == "SET") :
-                # NOT YET Implimented
-                returnValue = "<u8>1</u8>"
-            else:
-                returnValue = "<value><u8>0</u8></value>"
-
-
-        elif ApiAction == "netRemote.sys.caps.validModes/-1":
-            if (operation == "LIST_GET_NEXT") :
-                returnValue = "<item key=\"0\">\n"
-                returnValue += "<field name=\"id\"><c8_array>IR</c8_array></field>\n"
-                returnValue += "<field name=\"selectable\"><u8>1</u8></field>\n"
-                returnValue += "<field name=\"label\"><c8_array>Internet Radio</c8_array></field>\n"
-                returnValue += "<field name=\"streamable\"><u8>1</u8></field>\n"
-                returnValue += "<field name=\"modetype\"><u8>0</u8></field>\n"
-                returnValue += "</item>\n"
-                returnValue += "<listend/>\n"
-            else:
-                returnValue = "<value><u8>0</u8></value>"
-
-        elif ApiAction == "netRemote.sys.mode":
-            if (operation == "GET") :
-                # Only support Internet Radio
-                returnValue = "<value><u32>0</u32></value>"
-            else:
-                returnValue = "<value><u32>0</u32></value>"
-
-
-        elif ApiAction == "netRemote.sys.caps.eqPresets/-1":
-            if (operation == "LIST_GET_NEXT") :
-                returnValue = "<item key=\"0\">\n"
-                returnValue += "<field name=\"label\"><c8_array>Normal</c8_array></field>\n"
-                returnValue += "</item>\n"
-                returnValue += "<listend/>\n"
-            else:
-                returnValue = "<value><u8>0</u8></value>"
-
-        elif ApiAction == "netRemote.sys.audio.eqPreset":
-            if (operation == "GET") :
-                returnValue = "<item key=\"0\">\n"
-                returnValue += "<value><u32>0</u32></value>"
-                returnValue += "</item>\n"
-                returnValue += "<listend/>\n"
-            else:
-                returnValue = "<value><u8>0</u8></value>"
-
-        elif ApiAction == "netRemote.sys.audio.mute":
-            if (operation == "SET") :
-                if (int(FsapiValue) == 1):
-                    if (iStatus <> 0):
-                        log.info("Pausing")
-                        media.pausePlayer()
-                    returnValue = "<value><u8>1</u8></value>"
-                else:
-                    if (iStatus <> 0):
-                        log.info("Pausing")
-                        media.playStation()
-                    returnValue = "<value><u8>0</u8></value>"
-            elif (operation == "GET") :
-                if (iStatus <> 0):
+            elif ApiAction == "netRemote.play.control":
+                if (operation == "SET") :
+                    if (FsapiValue == 2):
+                        if alarm.isAlarmSounding():
+                            alarm.stopAlarm()
+                        elif (iStatus == 1): # if playing something, but not an alarm
+                            media.stopPlayer()
                     returnValue = "<value><u8>0</u8></value>"
                 else:
-                    returnValue = "<value><u8>1</u8></value>"
+                    returnValue = "<value><u8>0</u8></value>"
 
-            else:
-                returnValue = "<value><u8>0</u8></value>"
+            elif ApiAction == "stop":
+                if (iStatus == 1) or (iStatus == 2):
+                    media.stopPlayer()
 
+            elif ApiAction == "netRemote.sys.info.friendlyName":
+                if (operation == "LIST_GET_NEXT") :
+                    returnValue = "<value><c8_array>PiClock</c8_array></value>"
+                else:
+                    returnValue = "<value><u8>0</u8></value>"
 
-        elif ApiAction == "netRemote.sys.caps.volumeSteps":
-            if (operation == "GET") :
-                returnValue = "<value><u8>20</u8></value>"
-
-        elif ApiAction == "netRemote.sys.audio.volume":
-            if (operation == "GET") :
-                returnValue = "<value><u8>"+str(int(settings.getInt('volume')/5))+"</u8></value>"
-                log.debug("volume %s", returnValue)
-            elif (operation == "SET") :
-                NewVolume = int(FsapiValue) * 5
-
-                if (NewVolume > 100):
-                    NewVolume = 100
-                elif (NewVolume < 0):
-                    NewVolume = 0
-
-                settings.set('volume',NewVolume)
-                returnValue = "<value><u8>"+str(int(NewVolume/5))+"</u8></value>"
-
-        elif ApiAction == "netRemote.sys.audio.volumepercent":
-            if (operation == "GET") :
-                returnValue = "<value><u8>"+str(settings.getInt('volume'))+"</u8></value>"
-                log.debug("volume %s", returnValue)
-            elif (operation == "SET") :
-                log.debug("volume %s", FsapiValue)
-                NewVolume = int(FsapiValue)
-                if (NewVolume > 100):
-                    NewVolume = 100
-                elif (NewVolume < 0):
-                    NewVolume = 0
-
-                settings.set('volume',str(NewVolume))
-                returnValue = "<value><u8>"+str(int(NewVolume))+"</u8></value>"
-
-        elif (ApiAction == "netRemote.sys.power"):
-            # or ((ApiAction == "off") and( ApiValue == "alarm")):
-            log.debug("iStatus=%d, value=%s", iStatus, FsapiValue)
-            if (operation == "GET") :
-                if (int(FsapiValue) == -1):
-                    if (iStatus > 0) or (Poweredon == True):
-                        returnValue = "<value><u8>1</u8></value>"
-                        #~ log.debug("power=On")
+            elif ApiAction == "netRemote.play.info.name":
+                if (operation == "GET") :
+                    if (media.playerActiveStationNo() >= 0):
+                        returnValue = "<value><c8_array>" + str(StationList[media.playerActiveStationNo()]) + "</c8_array></value>"
                     else:
-                        returnValue = "<value><u8>0</u8></value>"
-                        #~ log.debug("power=Off")
-                elif (int(FsapiValue) == 0):
-                    alarm.stopAlarm()
-                    if (Poweredon == True):
-                        returnValue = "<value><u8>0</u8></value>"
-                        #~ log.debug("power=On")
-                    else:
-                        returnValue = "<value><u8>1</u8></value>"
-                        #~ log.debug("power=Off")
+                        returnValue = "<value><c8_array>" + "" + "</c8_array></value>"
                 else:
                     returnValue = "<value><u8>0</u8></value>"
-            elif (operation == "SET") :
-                #~ log.debug("iStatus=%d, value=%s", iStatus, FsapiValue)
-                if (int(FsapiValue) == 0):
-                    if media.playerActive():
+                log.debug("active station %s", returnValue)
+
+            elif ApiAction == "netRemote.play.info.text":
+                if (operation == "GET") :
+                    returnValue = "<value><c8_array>" + tft.ExtraMessage + "</c8_array></value>"
+                else:
+                    returnValue = "<value><c8_array>"+""+"</c8_array></value>"
+                log.debug("active text %s", returnValue)
+
+            elif ApiAction == "netRemote.nav.presets/-1":
+                if (operation == "LIST_GET_NEXT") :
+                    keyno = 1
+                    returnValue = ""
+                    for stationname in Settings.STATIONS:
+                        returnValue += "<item key=\"" + str(keyno) + "\">\n"
+                        returnValue += "<field name=\"name\"><c8_array>" + stationname['name'] + "</c8_array></field>\n"
+                        returnValue += "</item>\n"
+                        keyno += 1
+                        #~ log.debug("preset %d %s", keyno, stationname['name'])
+                    returnValue += "<listend/>\n"
+                else:
+                    # used to return 0
+                    returnValue = "<value><u8>" + str(media.playerActiveStationNo()) + "</u8></value>"
+
+            elif ApiAction == "netRemote.nav.action.selectPreset":
+                if (operation == "SET") :
+                    newstation = StationList[int(FsapiValue)-1]
+                    if (iStatus == 0) or (media.playerActiveStation() <> newstation):
+                        # Need to stop the alarm or it will retrigger
+                        if alarm.isAlarmSounding():
+                            alarm.stopAlarm()
+                        elif (iStatus == 1): # if playing something, but not an alarm
+                            media.stopPlayer()
+
+                        log.info("Playing : " + newstation)
+                        log.info("no %d" , int(FsapiValue))
+                        if (int(FsapiValue) >=0):
+                            media.playStation(int(FsapiValue)-1)
+
+                    returnValue = "<value><c8_array>" + newstation + "</c8_array></value>"
+                elif (operation == "GET") :
+                    returnValue = "<value><c8_array>" + str(media.playerActiveStationNo()) + "</c8_array></value>"
+                else:
+                    returnValue = "<value><c8_array>0</c8_array></value>"
+
+            elif ApiAction == "netRemote.nav.state":
+                # Menu Navigation
+                if (operation == "GET") :
+                    returnValue = "<u8>1</u8>"
+                if (operation == "SET") :
+                    # NOT YET Implimented
+                    returnValue = "<u8>1</u8>"
+                else:
+                    returnValue = "<value><u8>0</u8></value>"
+
+
+            elif ApiAction == "netRemote.sys.caps.validModes/-1":
+                if (operation == "LIST_GET_NEXT") :
+                    returnValue = "<item key=\"0\">\n"
+                    returnValue += "<field name=\"id\"><c8_array>IR</c8_array></field>\n"
+                    returnValue += "<field name=\"selectable\"><u8>1</u8></field>\n"
+                    returnValue += "<field name=\"label\"><c8_array>Internet Radio</c8_array></field>\n"
+                    returnValue += "<field name=\"streamable\"><u8>1</u8></field>\n"
+                    returnValue += "<field name=\"modetype\"><u8>0</u8></field>\n"
+                    returnValue += "</item>\n"
+                    returnValue += "<listend/>\n"
+                else:
+                    returnValue = "<value><u8>0</u8></value>"
+
+            elif ApiAction == "netRemote.sys.mode":
+                if (operation == "GET") :
+                    # Only support Internet Radio
+                    returnValue = "<value><u32>0</u32></value>"
+                else:
+                    returnValue = "<value><u32>0</u32></value>"
+
+
+            elif ApiAction == "netRemote.sys.caps.eqPresets/-1":
+                if (operation == "LIST_GET_NEXT") :
+                    returnValue = "<item key=\"0\">\n"
+                    returnValue += "<field name=\"label\"><c8_array>Normal</c8_array></field>\n"
+                    returnValue += "</item>\n"
+                    returnValue += "<listend/>\n"
+                else:
+                    returnValue = "<value><u8>0</u8></value>"
+
+            elif ApiAction == "netRemote.sys.audio.eqPreset":
+                if (operation == "GET") :
+                    returnValue = "<item key=\"0\">\n"
+                    returnValue += "<value><u32>0</u32></value>"
+                    returnValue += "</item>\n"
+                    returnValue += "<listend/>\n"
+                else:
+                    returnValue = "<value><u8>0</u8></value>"
+
+            elif ApiAction == "netRemote.sys.audio.mute":
+                if (operation == "SET") :
+                    if (int(FsapiValue) == 1):
+                        if (iStatus <> 0):
+                            log.info("Pausing")
+                            media.pausePlayer()
+                        returnValue = "<value><u8>1</u8></value>"
+                    else:
+                        if (iStatus <> 0):
+                            log.info("Pausing")
+                            media.playStation()
+                        returnValue = "<value><u8>0</u8></value>"
+                elif (operation == "GET") :
+                    if (iStatus <> 0):
+                        returnValue = "<value><u8>0</u8></value>"
+                    else:
+                        returnValue = "<value><u8>1</u8></value>"
+
+                else:
+                    returnValue = "<value><u8>0</u8></value>"
+
+
+            elif ApiAction == "netRemote.sys.caps.volumeSteps":
+                if (operation == "GET") :
+                    returnValue = "<value><u8>31</u8></value>"
+
+            elif ApiAction == "netRemote.sys.audio.volume":
+                # 0 to 31
+                if (operation == "GET") :
+                    returnValue = "<value><u8>"+str(settings.remap(settings.getInt('volumepercent'),0,100,0,32))+"</u8></value>"
+                    log.debug("volume %s", returnValue)
+                elif (operation == "SET") :
+                    log.debug("volume from %s", FsapiValue)
+                    NewVolume = settings.remap(int(FsapiValue),0,32,0,100)
+
+                    if (NewVolume > 100):
+                        NewVolume = 100
+                    elif (NewVolume < 0):
+                        NewVolume = 0
+
+                    settings.set('volumepercent',NewVolume)
+                    returnValue = "<value><u8>"+str(FsapiValue)+"</u8></value>"
+
+            elif ApiAction == "netRemote.sys.audio.volumepercent":
+                if (operation == "GET") :
+                    returnValue = "<value><u8>"+str(settings.getInt('volumepercent'))+"</u8></value>"
+                    log.debug("volume %s", returnValue)
+                elif (operation == "SET") :
+                    log.debug("volume %s", FsapiValue)
+                    NewVolume = int(FsapiValue)
+                    if (NewVolume > 100):
+                        NewVolume = 100
+                    elif (NewVolume < 0):
+                        NewVolume = 0
+
+                    settings.set('volumepercent',str(NewVolume))
+                    returnValue = "<value><u8>"+str(int(NewVolume))+"</u8></value>"
+
+            elif (ApiAction == "netRemote.sys.power"):
+                # or ((ApiAction == "off") and( ApiValue == "alarm")):
+                #log.debug("iStatus=%d, value=%s", iStatus, FsapiValue)
+                if (operation == "GET") :
+                    if (int(FsapiValue) == -1):
+                        if (iStatus > 0) or (Poweredon == True):
+                            returnValue = "<value><u8>1</u8></value>"
+                            #~ log.debug("power=On")
+                        else:
+                            returnValue = "<value><u8>0</u8></value>"
+                            #~ log.debug("power=Off")
+                    elif (int(FsapiValue) == 0):
                         alarm.stopAlarm()
-                    if (iStatus > 0): # if playing something, but not an alarm
-                        media.stopPlayer()
-                    returnValue = "<value><u8>1</u8></value>"
-                    Poweredon = False
-                    #~ log.debug("Set power=Off")
+                        if (Poweredon == True):
+                            returnValue = "<value><u8>0</u8></value>"
+                            #~ log.debug("power=On")
+                        else:
+                            returnValue = "<value><u8>1</u8></value>"
+                            #~ log.debug("power=Off")
+                    else:
+                        returnValue = "<value><u8>0</u8></value>"
+                elif (operation == "SET") :
+                    #~ log.debug("iStatus=%d, value=%s", iStatus, FsapiValue)
+                    if (int(FsapiValue) == 0):
+                        if media.playerActive():
+                            alarm.stopAlarm()
+                        if (iStatus > 0): # if playing something, but not an alarm
+                            media.stopPlayer()
+                        returnValue = "<value><u8>1</u8></value>"
+                        Poweredon = False
+                        #~ log.debug("Set power=Off")
+                    else:
+                        returnValue = "<value><u8>0</u8></value>"
+                        Poweredon = True
+                        #~ log.debug("Set power=On")
                 else:
                     returnValue = "<value><u8>0</u8></value>"
-                    Poweredon = True
-                    #~ log.debug("Set power=On")
-            else:
-                returnValue = "<value><u8>0</u8></value>"
 
 
-        elif ApiAction == "off":
-            if ApiAction == "volume":
-                NewVolume = settings.getInt('volume') - int(1)
+            elif ApiAction == "off":
+                if ApiAction == "volume":
+                    NewVolume = settings.getInt('volume') - int(1)
 
-                if (NewVolume > 100):
-                    NewVolume = 100
-                elif (NewVolume < 0):
-                    NewVolume = 0
-                settings.set('volume',NewVolume)
+                    if (NewVolume > 100):
+                        NewVolume = 100
+                    elif (NewVolume < 0):
+                        NewVolume = 0
+                    settings.set('volume',NewVolume)
 
-        elif ApiAction == "on":
-            if ApiAction == "volume":
-                NewVolume = settings.getInt('volume') + int(1)
+            elif ApiAction == "on":
+                if ApiAction == "volume":
+                    NewVolume = settings.getInt('volume') + int(1)
 
-                if (NewVolume > 100):
-                    NewVolume = 100
-                elif (NewVolume < 0):
-                    NewVolume = 0
-                settings.set('volume',NewVolume)
+                    if (NewVolume > 100):
+                        NewVolume = 100
+                    elif (NewVolume < 0):
+                        NewVolume = 0
+                    settings.set('volume',NewVolume)
 
-        elif ApiAction <> "status":
-            log.debug("unknown api %s", ApiAction)
+            elif ApiAction <> "status":
+                log.debug("unknown api %s", ApiAction)
+                return "<?xml version=\"1.0\"?>\n<fsapiResponse>\n<status>FS_NODE_DOES_NOT_EXIST</status>\n</fsapiResponse>"
+
+        except Exception as e: # stream not valid I guess
+            log.error("fsapi Error: %s" , e)
             return "<?xml version=\"1.0\"?>\n<fsapiResponse>\n<status>FS_NODE_DOES_NOT_EXIST</status>\n</fsapiResponse>"
-
 
         # Return Current Status
         #~ CurrentStation = media.playerActiveStation()

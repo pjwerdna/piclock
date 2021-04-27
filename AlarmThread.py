@@ -16,6 +16,13 @@ import urllib2
 # 08/08/2020 - Added separate volumes for each daily alarm
 # 13/08/2020 - Added debug logging for alarm volumes
 # 12/10/2020 - Finally fixed the alarm time change during holidays being missed
+# 14/10/2020 - Fixed multiple speach output when calling manualSetAlarm(...)
+# 18/10/2020 - Better way of restarting the player when the station fails
+# 02/11/2020 - Made alarm volumes use the volumepercent routines
+# 22/12/2020 - Minor change to restarting the player when the station fails
+# 31/12/2020 - Fix for alarms failing to be set when there are no events
+# 24/01/2021 - Actually call media.restartPlayer
+# 26/01/2021 - Moved player monitoring to player Thread
 
 log = logging.getLogger('root')
 
@@ -36,8 +43,9 @@ class AlarmThread(threading.Thread):
       self.nextAlarmStation = -1
       self.alarmTimeout=None
       self.snoozing = False
+      self.message = ""
 
-      self.currentvolume = -1 # no volume increase
+      self.increasingvolume = -1 # no volume increase
       self.alarmVolume = 50 # random default volume for next alarm
 
       self.settings = Settings #Settings.Settings()
@@ -95,7 +103,7 @@ class AlarmThread(threading.Thread):
       if (self.settings.getInt('gradual_volume') == 1):
           # Should do this when actually outputting sound really!
           self.settings.setVolume(30)
-          self.currentvolume = 40 # anything lower is inaudiable
+          self.increasingvolume = 40 # anything lower is inaudiable
       self.media.soundAlarm(self, self.nextAlarmStation)
       timeout = datetime.datetime.now() #pytz.timezone('Europe/London'))
       timeout += datetime.timedelta(minutes=self.settings.getInt('alarm_timeout'))
@@ -211,6 +219,7 @@ class AlarmThread(threading.Thread):
 
          if (nexteventInfo == None):
              log.debug("no Events Listed")
+             eventTime = datetime.datetime.now() + datetime.timedelta(days=1)
 
          else:
              # The time of the next Holiday on our calendar.
@@ -266,6 +275,7 @@ class AlarmThread(threading.Thread):
          # put alarm time into event
          nextAlarm = nextAlarm.replace(hour=int(alarmtime[0]))
          nextAlarm = nextAlarm.replace(minute=int(alarmtime[1]))
+         nextAlarm = nextAlarm.replace(second=0)
 
          #~ log.debug("next alarm %s", event)
 
@@ -326,11 +336,11 @@ class AlarmThread(threading.Thread):
       self.fromEvent = False
       if alarmTime <> None:
           self.settings.set('manual_alarm',calendar.timegm(alarmTime.utctimetuple()))
-          self.setAlarmTime(alarmTime)
-          self.media.playVoice('Manual alarm has been set')
-      if AlarmStation <> -1:
-        self.nextAlarmStation = AlarmStation
-        self.media.playVoice('Default Alarm Station has Been changed')
+          self.setAlarmTime(alarmTime, AlarmStation)
+          if AlarmStation <> -1:
+                self.media.playVoice('Manual alarm and Station has been set')
+          else:
+                self.media.playVoice('Manual alarm has been set')
 
    def setAlarmTime(self,alarmTime, AlarmStation = -1, AlarmVolume= -1):
       self.nextAlarm = alarmTime
@@ -429,46 +439,55 @@ class AlarmThread(threading.Thread):
              self.stopAlarm()
 
           # Get what we have to play (if anything)
-          if self.media.playerActive() and (self.nextAlarm is not None):
+
+          #if self.media.playerActive() and (self.nextAlarm is not None):
+          if self.media.playerActive() and (self.alarmTimeout is not None):
+                self.message = ", Wakey Wakey!"
+
                 try:
                     currentplayerpos = self.media.player.stream_pos
 
+                    # Check if Player stuck or disconnected
                     if (currentplayerpos == None) or (currentplayerpos == lastPlayerPos):
                         NoneCount += 1
                         log.info("nonecount=%d", NoneCount)
-                        if NoneCount > 20:
+                        log.info("currentplayerpos=%d", currentplayerpos)
+                        if (NoneCount > 20): # or (currentplayerpos == None):
                             log.info("Player may be stuck, restarting")
                             #~ self.snoozefor()
-                            self.silenceAlarm()
+                            #self.silenceAlarm()
 
-                            time.sleep(5)
-                            log.info("Player Restarting")
+                            #time.sleep(5)
+
                             #~ self.media.soundAlarm(self, self.nextAlarmStation)
-                            self.media.playStationURL(self.media.CurrentStation, self.media.CurrentURL)
+                            # self.media.playStationURL(self.media.CurrentStation, self.media.CurrentURL, self.media.CurrentStationNo)
+                            self.media.restartPlayer()
                             NoneCount = 0
                     else:
                         NoneCount = 0
 
-                except:
+                except Exception as e:
+                    log.exception("Error: %s" , e)
                     currentplayerpos = None
 
                 lastPlayerPos = currentplayerpos
           else:
                 currentplayerpos = None
+                self.message = ""
 
           # DO we need to increase the volume?
-          if (self.currentvolume != -1):
+          if (self.increasingvolume != -1):
 
               # if we have something to play increase volume
               if currentplayerpos != None:
-                  self.currentvolume += 2
-                  if self.currentvolume >= self.alarmVolume: #settings.getInt('volume'):
+                  self.increasingvolume += 2
+                  if self.increasingvolume >= self.alarmVolume: #settings.getInt('volume'):
                       #self.settings.setVolume(self.settings.getInt('volume'))
                       self.settings.setVolume(self.alarmVolume)
-                      self.currentvolume = -1 # At required volume
+                      self.increasingvolume = -1 # At required volume
                       log.debug("Reached alarm volume level")
                   else:
-                      self.settings.setVolume(self.currentvolume)
+                      self.settings.setVolume(self.increasingvolume)
 
           if (self.alarmGatherer.getNextEventTimeout == None) or (self.alarmGatherer.eventCache == None) or (LastTime > self.alarmGatherer.getNextEventTimeout):
             nexteventInfo = self.alarmGatherer.getNextEventDetails()

@@ -3,7 +3,8 @@
 # Main Entry point
 # Starts all other threads
 #
-# Version 2.8
+# Version 2.9
+# 26/01/2021 - Media player is now a thread and will montiroe itself (used to be in AlarmThread!)
 
 import logging
 import logging.handlers
@@ -217,7 +218,8 @@ class AlarmPi:
 
       log.info("Loading media")
       media = MediaPlayer.MediaPlayer()
-      #media.playVoice('Starting up')
+      media.setDaemon(True)
+      media.start()
 
       log.info("Loading alarm control")
       self.alarm = AlarmThread.AlarmThread(weather, media, self.settings)
