@@ -23,6 +23,7 @@ import urllib2
 # 31/12/2020 - Fix for alarms failing to be set when there are no events
 # 24/01/2021 - Actually call media.restartPlayer
 # 26/01/2021 - Moved player monitoring to player Thread
+# 08/05/2021 - Fixed minor syntax errors.
 
 log = logging.getLogger('root')
 
@@ -334,10 +335,10 @@ class AlarmThread(threading.Thread):
    def manualSetAlarm(self,alarmTime, AlarmStation = -1):
       log.info("Manually setting next alarm to %s",alarmTime)
       self.fromEvent = False
-      if alarmTime <> None:
+      if alarmTime != None:
           self.settings.set('manual_alarm',calendar.timegm(alarmTime.utctimetuple()))
           self.setAlarmTime(alarmTime, AlarmStation)
-          if AlarmStation <> -1:
+          if AlarmStation != -1:
                 self.media.playVoice('Manual alarm and Station has been set')
           else:
                 self.media.playVoice('Manual alarm has been set')

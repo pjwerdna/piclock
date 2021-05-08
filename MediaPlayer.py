@@ -5,6 +5,7 @@
 
 # 18/10/220 - Added restartPlayer so AlarmThread can do easy restarts
 # 26/01/2021 - Moved player monitoring to player Thread
+# 08/05/2021 - Fixed minor syntax errors.
 
 import time
 from mplayer import Player
@@ -189,7 +190,7 @@ class MediaPlayer(threading.Thread):
                   checkmessage = 10
                   try:
                      currentplayerpos = self.player.stream_pos
-                     if (currentplayerpos > lastplayerpos) and (currentplayerpos <> None):
+                     if (currentplayerpos > lastplayerpos) and (currentplayerpos != None):
                            self.message = ", Radio Playing"
                            #~ NoneCount = 0
                      elif (currentplayerpos == None) or (lastplayerpos == -1):
@@ -231,9 +232,9 @@ class MediaPlayer(threading.Thread):
 
 
 if __name__ == '__main__':
-    print "Showing all current settings"
+    print ("Showing all current settings")
     media = MediaPlayer()
-    print "Playing file %s", PANIC_ALARM
+    print ("Playing file %s", PANIC_ALARM)
     player = Player("-cache 1024")
     player.loadfile(PANIC_ALARM)
     player.loop = 0
@@ -243,7 +244,7 @@ if __name__ == '__main__':
     #~ try:
 
     meta = player.metadata['title']
-    print "title : " + meta
+    print ("title : " + meta)
     #~ except Exception as e:
         #~ e = sys.exc_info()[0]
         #~ print "Error: %s" % e

@@ -25,6 +25,7 @@ import json
 #              Should keep volume and volumepercent in step rounding permitting
 #              Home page of webserver updates every 10 seconds
 # 27/04/2021 - Fixed volume reading and writing
+# 08/05/2021 - Fixed minor syntax errors. Extendsion api?action=status syntax 
 
 # fsapi based on
 # https://github.com/flammy/fsapi
@@ -336,7 +337,7 @@ class index:
       log.info("default station %s", StationList[NewDefaultStation])
       settings.set('default_station', NewDefaultStation)
 
-      if form['time'].value <> alarmTime:
+      if form['time'].value != alarmTime :
           alarmHour = int(form['time'].value[:2])
           alarmMin = int(form['time'].value[2:])
           time = datetime.datetime.now(pytz.timezone('Europe/London'))
@@ -348,9 +349,9 @@ class index:
           time = time.replace(hour=alarmHour, minute=alarmMin, microsecond=0, second=0)
           alarm.manualSetAlarm(time, NewDefaultStation)
       else:
-          time = nextAlarm
-      #~ StationList = []
-      #~ for stationname in Settings.STATIONS:
+        time = nextAlarm
+        #~ StationList = []
+        #~ for stationname in Settings.STATIONS:
             #~ StationList.append(stationname['name'])
 
 
@@ -942,7 +943,7 @@ class api: # returns json describing the Player State
 
             # Check station not already active (which is a string)
             newstation = StationList[newStationNo]
-            if (iStatus == 0) or (media.playerActiveStation() <> newstation):
+            if (iStatus == 0) or (media.playerActiveStation() != newstation):
                 # Need to stop the alarm or it will retrigger
                 if alarm.isAlarmSounding():
                     alarm.stopAlarm()
@@ -957,7 +958,7 @@ class api: # returns json describing the Player State
                 media.stopPlayer()
 
         elif ApiAction == "pause":
-            if (iStatus <> 0):
+            if (iStatus != 0):
                 log.info("Pausing")
                 media.pausePlayer()
 
@@ -996,7 +997,7 @@ class api: # returns json describing the Player State
         #~ elif ApiAction == "SetAlarmStation":
             #~ AlarmStation = ApiValue
             #~ NewAlarmStation = StationList.index(ApiValue)
-            #~ if settings.get('default_station') <> NewAlarmStation:
+            #~ if settings.get('default_station') != NewAlarmStation:
                 #~ settings.set('default_station', NewAlarmStation)
                 #~ alarm.manualSetAlarm(alarm.getNextAlarm(), NewAlarmStation)
 
@@ -1016,7 +1017,7 @@ class api: # returns json describing the Player State
             if nextAlarm is not None:
                 alarmTime = nextAlarm.strftime("%H%M")
 
-            if ApiValue <> alarmTime:
+            if ApiValue != alarmTime:
                 alarmHour = int(ApiValue[:2])
                 alarmMin = int(ApiValue[2:])
                 time = datetime.datetime.today() #(pytz.timezone('Europe/London'))
@@ -1026,11 +1027,11 @@ class api: # returns json describing the Player State
                     time = time + datetime.timedelta(days=1)
 
                 time = time.replace(hour=alarmHour, minute=alarmMin, microsecond=0, second=0)
-                if CurrentAlarmStation <> NewAlarmStation:
+                if CurrentAlarmStation != NewAlarmStation:
                     CurrentAlarmStation = NewAlarmStation
                 alarm.manualSetAlarm(time, CurrentAlarmStation)
 
-            elif CurrentAlarmStation <> NewAlarmStation:
+            elif CurrentAlarmStation != NewAlarmStation:
                 CurrentAlarmStation = NewAlarmStation
                 alarm.manualSetAlarm(nextAlarm, CurrentAlarmStation)
 
@@ -1055,46 +1056,56 @@ class api: # returns json describing the Player State
                     NewVolume = 0
                 settings.set('volume',NewVolume)
 
-        elif ApiAction <> "status":
+        elif ApiAction != "status":
             log.debug("unknown api %s", ApiAction)
             return ("")
 
         # Return Current Status
-        CurrentStation = media.playerActiveStation()
-        if media.playerActive():
-            iStatus = 1
-            if media.playerPaused():
-                iStatus = 2
-                CurrentStation += " (Paused)"
-        else:
-            iStatus = 0
-
-        if alarm.nextAlarmStation != None:
-            AlarmStation = StationList[alarm.nextAlarmStation]
-        else:
-            AlarmStation = "None"
-        AlarmTime = alarm.getNextAlarm()
-        # AlarmState - bit 0 = 1 - Sounding
-        #              bit 1 = 1 - Automatic
-        AlarmState = 0
-        if AlarmTime != None:
-            AlarmTime = AlarmTime.time().strftime('%H:%M')
-
-            if alarm.isAlarmSounding():
-                AlarmState += 1
-
-            if settings.get('manual_alarm') == '':
-                NextAlarmType = "Automatic"
-                AlarmState += 2
+        if ((ApiValue == "") or (ApiValue == "status")):
+            CurrentStation = media.playerActiveStation()
+            if media.playerActive():
+                iStatus = 1
+                if media.playerPaused():
+                    iStatus = 2
+                    CurrentStation += " (Paused)"
             else:
-                NextAlarmType = "Manual"
+                iStatus = 0
+
+            if alarm.nextAlarmStation != None:
+                AlarmStation = StationList[alarm.nextAlarmStation]
+            else:
+                AlarmStation = "None"
+            AlarmTime = alarm.getNextAlarm()
+            # AlarmState - bit 0 = 1 - Sounding
+            #              bit 1 = 1 - Automatic
+            AlarmState = 0
+            if AlarmTime != None:
+                AlarmTime = AlarmTime.time().strftime('%H:%M')
+
+                if alarm.isAlarmSounding():
+                    AlarmState += 1
+
+                if settings.get('manual_alarm') == '':
+                    NextAlarmType = "Automatic"
+                    AlarmState += 2
+                else:
+                    NextAlarmType = "Manual"
+            else:
+                AlarmTime = "XX:XX"
+                NextAlarmType = "None"
+
+            Statusjson = { 'Status': PlayerStatus[iStatus], 'Station': CurrentStation, 'Brightness' : brightnessthread.getBrightnessTweak(),
+                'Volume' : settings.getInt('volumepercent'), 'AlarmState': AlarmState, 'AlarmTIme':AlarmTime, 'AlarmStation':AlarmStation, 'NextAlarmType' : NextAlarmType}
+        elif (ApiValue == "alarms"):
+
+            Statusjson = {}
+            for dayno in range(6):
+                Statusjson['alarm_weekday_' + str(dayno)] = settings.get('alarm_weekday_' + str(dayno))
+                Statusjson['alarm_station_' + str(dayno)] = settings.get('alarm_station_' + str(dayno))
+                Statusjson['alarm_volume_' + str(dayno)]  = settings.get('alarm_volume_' + str(dayno))
+
         else:
-            AlarmTime = "XX:XX"
-            NextAlarmType = "None"
-
-
-        Statusjson = { 'Status': PlayerStatus[iStatus], 'Station': CurrentStation, 'Brightness' : brightnessthread.getBrightnessTweak(),
-            'Volume' : settings.getInt('volumepercent'), 'AlarmState': AlarmState, 'AlarmTIme':AlarmTime, 'AlarmStation':AlarmStation, 'NextAlarmType' : NextAlarmType}
+            Statusjson = {'Status': "All"}
 
         web.header('Content-Type','application/json')
         return json.dumps(Statusjson)
@@ -1170,7 +1181,7 @@ class fsapi: # returns FS API describing the Player State
                     #~ StationList.append(stationname['name'])
 
                 newstation = StationList[StationList.index(ApiValue)]
-                if (iStatus == 0) or (media.playerActiveStation() <> newstation):
+                if (iStatus == 0) or (media.playerActiveStation() != newstation):
                     # Need to stop the alarm or it will retrigger
                     if alarm.isAlarmSounding():
                         alarm.stopAlarm()
@@ -1236,7 +1247,7 @@ class fsapi: # returns FS API describing the Player State
             elif ApiAction == "netRemote.nav.action.selectPreset":
                 if (operation == "SET") :
                     newstation = StationList[int(FsapiValue)-1]
-                    if (iStatus == 0) or (media.playerActiveStation() <> newstation):
+                    if (iStatus == 0) or (media.playerActiveStation() != newstation):
                         # Need to stop the alarm or it will retrigger
                         if alarm.isAlarmSounding():
                             alarm.stopAlarm()
@@ -1307,17 +1318,17 @@ class fsapi: # returns FS API describing the Player State
             elif ApiAction == "netRemote.sys.audio.mute":
                 if (operation == "SET") :
                     if (int(FsapiValue) == 1):
-                        if (iStatus <> 0):
+                        if (iStatus != 0):
                             log.info("Pausing")
                             media.pausePlayer()
                         returnValue = "<value><u8>1</u8></value>"
                     else:
-                        if (iStatus <> 0):
+                        if (iStatus != 0):
                             log.info("Pausing")
                             media.playStation()
                         returnValue = "<value><u8>0</u8></value>"
                 elif (operation == "GET") :
-                    if (iStatus <> 0):
+                    if (iStatus != 0):
                         returnValue = "<value><u8>0</u8></value>"
                     else:
                         returnValue = "<value><u8>1</u8></value>"
@@ -1421,7 +1432,7 @@ class fsapi: # returns FS API describing the Player State
                         NewVolume = 0
                     settings.set('volume',NewVolume)
 
-            elif ApiAction <> "status":
+            elif ApiAction != "status":
                 log.debug("unknown api %s", ApiAction)
                 return "<?xml version=\"1.0\"?>\n<fsapiResponse>\n<status>FS_NODE_DOES_NOT_EXIST</status>\n</fsapiResponse>"
 

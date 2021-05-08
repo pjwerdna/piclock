@@ -24,3 +24,5 @@
 #              Message creation & store moved to each thread (tftthread.py)
 # 20/04/2021 - SetVolumePercent nolonger converts its parameter to a percentage as it already should be one (Settings.py)
 # 27/04/2021 - Fixed volume reading and writing (Web.py)
+# 27/04/2021 - Got a better remap range to range routine (Settings.py)
+# 08/05/2021 - Fixed minor syntax errors (player.html, Settings.py, AlarmThread.py, Web.py, Mediaplayer.py)

@@ -241,7 +241,7 @@ class AlarmGatherer:
 
 
 if __name__ == '__main__':
-   print "Running credential check"
+   print ("Running credential check")
 
    #try:
    import argparse
@@ -253,9 +253,9 @@ if __name__ == '__main__':
       if not a.checkCredentials():
          raise Exception("Credential check failed")
    except:
-      print "Credentials not correct, please generate new code"
+      print ("Credentials not correct, please generate new code")
       a.generateAuth()
       a = AlarmGatherer()
 
-   print a.getNextEventTime()
-   print a.getNextEventLocation()
+   print (a.getNextEventTime())
+   print (a.getNextEventLocation())

@@ -11,6 +11,8 @@ import logging
 #              Should keep volume and volumepercent in step rounding permitting
 # 03/11/2020 - Changed default volume and volumepercent to minimum
 # 20/04/2021 - SetVolumePercent nolonger converts its parameter to a percentage as it already should be one
+# 27/04/2021 - Got a better remap range to range routine
+# 08/05/2021 - Fixed minor syntax errors.
 
 log = logging.getLogger('root')
 
@@ -217,17 +219,17 @@ class Settings:
    def volumeRangeToPercent(self,AlarmValue):
         return self.remap(AlarmValue,self.getInt("minvolume"),100,0,100)
 
-   def remap(self, x, oMin, oMax, nMin, nMax ):
+   def badremap(self, x, oMin, oMax, nMin, nMax ):
         # Map x which is in oMin to oMax to the range nMIn to nMax
 
         try:
             #range check
             if oMin == oMax:
-                print "Warning: remap: Zero input range"
+                print ("Warning: remap: Zero input range")
                 return x
 
             if nMin == nMax:
-                print "Warning: remap: Zero output range"
+                print ("Warning: remap: Zero output range")
                 return x
 
             #check reversed input range
@@ -259,16 +261,27 @@ class Settings:
 
         return result
 
+   def remap(self, value, leftMin, leftMax, rightMin, rightMax):
+      # Figure out how 'wide' each range is
+      leftSpan = leftMax - leftMin
+      rightSpan = rightMax - rightMin
+
+      # Convert the left range into a 0-1 range (float)
+      valueScaled = float(value - leftMin) / float(leftSpan)
+
+      # Convert the 0-1 range into a value in the right range.
+      return int(round(rightMin + (valueScaled * rightSpan)))
+
    def __del__(self):
       self.conn.close()
 
 if __name__ == '__main__':
 
-   print "Showing all current settings"
+   print ("Showing all current settings")
    settings = Settings()
 
    #settings.getorset('minvolume','55')
    #settings.getorset('volumepercent',remap(settings.getInt("volume"),settings.getInt("minvolume"),100,0,100))
 
    for s in settings.DEFAULTS:
-      print "%s = %s" % (s[0], settings.get(s[0]))
+      print ("%s = %s" % (s[0], settings.get(s[0])))

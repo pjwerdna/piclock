@@ -21,3 +21,5 @@ sslconfig.txt
 .vscode/settings.json
 piclock.code-workspace
 remaptest.py
+.vscode/launch.json
+createnewcertificate.txt
