@@ -1,5 +1,8 @@
 # Code from http://www.dronkert.net/rpi/vol.html for volume adjustment
 
+# 08/05/2021 - Fixed minor syntax errors. Extendsion api?action=status syntax 
+# 11/05/2021 - limited resolution of temp display in info menu to
+
 import time
 import datetime
 #import pytz
@@ -40,7 +43,7 @@ MenuColour = colours.RED
 
 class MenuControl(threading.Thread):
    def __init__(self,lcd, MediaPlayer, Weather, CallBack, brightnessThreadptr): # ,alarmThread):
-      threading.Thread.__init__(self)
+      #threading.Thread.__init__(self)
 
       #self.shutdownCallback = shutdownCallback
       #self.alarmThread = alarmThread
@@ -126,7 +129,7 @@ class MenuControl(threading.Thread):
                    self.stop()
 
                elif (event.type is MOUSEMOTION):
-                    if downpos <> -1000:
+                    if downpos != -1000:
                         mx,my = pos
                         dragchange = downpos - my
                         if abs(dragchange) > 4: #LineHeight:
@@ -138,7 +141,7 @@ class MenuControl(threading.Thread):
                             if offset > 0:
                                 offset = 0
                             log.debug("move line %d , %d",offset, maxoffset)
-                            if LastMenuItem <> "?":
+                            if LastMenuItem != "?":
                                 LineHeight, maxoffset = self.lcd.DisplayMenu(Title, MenutoDisplay, MenuColour, Highlighted, MenuValues, colours.BLUE, ExtraMessage=MenuChoice, displayoffset=offset)
                             else:
                                 LineHeight, maxoffset = self.lcd.DisplayMenu(Title, MenutoDisplay,MenuColour, -1, MenuValues, displayoffset=offset)
@@ -288,7 +291,7 @@ class MenuControl(threading.Thread):
                     e = sys.exc_info()[0]
                     log.debug( "Error: %s" , e )
 
-            menu_display.append("Temp (C) : %f" % temp)
+            menu_display.append("Temp (C) : %.1f" % temp)
             menu_display.append("Back" )
             self.DisplaySubMenu(menu_display, "Information")
 
@@ -389,12 +392,12 @@ class MenuControl(threading.Thread):
 
         elif (SelectedItem == "Alarm Settings"): # List all alarm days, time and stations
 
-            StationList = []
-            for stationname in Settings.STATIONS:
-                StationList.append(stationname['name'])
+            StationList = self.settings.getStationList()
+            #for stationname in self.settings.STATIONS:
+            #    StationList.append(stationname['name'])
             alarmvalues = []
             for dayno in range(0,7):
-                alarmvalues.append(self.settings.get('alarm_weekday_' + str(dayno)) + " " + StationList[int(self.settings.get('alarm_station_' + str(dayno)))])
+                alarmvalues.append(self.settings.get('alarm_weekday_' + str(dayno)) + " " + StationList(int(self.settings.get('alarm_station_' + str(dayno)))))
             DayMenu = Daynames
             #~ DayMenu.append("Back")
             action = self.DisplaySubMenu(DayMenu, "Daily Alarm Details",alarmvalues)
@@ -548,7 +551,7 @@ class MenuControl(threading.Thread):
    # We need to catch a possible IndexError that crops up in getMessage()
    def __getStationName(self,stationindex):
       try:
-         return Settings.STATIONS[stationindex]['name']
+         return self.settings.getStationName(stationindex)
       except IndexError:
          return ""
 
@@ -640,7 +643,7 @@ class MenuControl(threading.Thread):
                    self.stop()
 
                elif (event.type is MOUSEMOTION):
-                    if downpos <> -1000:
+                    if downpos != -1000:
                         mx,my = pos
                         dragchange = downpos - my
                         if abs(dragchange) > LineHeight:
@@ -654,7 +657,7 @@ class MenuControl(threading.Thread):
                             elif offset < - maxoffset:
                                 offset = - maxoffset
                             log.debug("move line %d",offset)
-                            if LastMenuItem <> "?":
+                            if LastMenuItem != "?":
                                 LineHeight,maxoffset = self.lcd.DisplayMenu(Title, MenuText, MenuColour, Highlighted, MenuValues, colours.BLUE, ExtraMessage=MenuChoice, displayoffset=offset)
                             else:
                                 LineHeight, maxoffset = self.lcd.DisplayMenu(Title, MenuText,MenuColour, -1, MenuValues, displayoffset=offset)
@@ -762,7 +765,7 @@ class MenuControl(threading.Thread):
                 StationURL = htmllines[0]
 
             log.info("sURL=%s", StationURL)
-            if StationURL <> "":
+            if StationURL != "":
                 self.media.playStationURL(StationName, StationURL)
 
 
@@ -838,7 +841,7 @@ class MenuControl(threading.Thread):
                         sNowPlaying = self.GrabProperty(Fullline,"now_playing_id")
                         stype = self.GrabProperty(Fullline,"type")
 
-                        if (sText <> "") and (sURL <> ""):
+                        if (sText != "") and (sURL != ""):
                             MenuText.append (sText)
                             MenuURLs.append (sURL)
                             Subtexts.append (sSubtext)

@@ -12,7 +12,6 @@ weather.cache.json.txt
 settings.db
 *.cache
 Netremote.py
-mqtt.py
 piclock
 CalendarCredentials2.py
 CalendarCredentials.py
@@ -23,3 +22,8 @@ piclock.code-workspace
 remaptest.py
 .vscode/launch.json
 createnewcertificate.txt
+ALarms.json
+Stations.json
+python3 notes.txt
+settings - Copy.db
+WebServer.py

@@ -1,5 +1,5 @@
 import datetime
-import pytz
+#import pytz
 import urllib2
 import Settings
 import logging
@@ -46,10 +46,10 @@ class WeatherFetcher:
         self.jsoncacheTimeout = None
 
    def getWeather(self):
-        if (self.settings.get('WUG_KEY') <> ""):
+        if (self.settings.get('WUG_KEY') != ""):
           # Only try getting weather if its been setup
 
-          if(self.cache is None or self.cacheTimeout is None or self.cacheTimeout < datetime.datetime.now(pytz.timezone('Europe/London'))):
+          if(self.cache is None or self.cacheTimeout is None or self.cacheTimeout < datetime.datetime.now()): # pytz.timezone('Europe/London')
              weather = Weather()
 
              #~ if (self.jsoncacheTimeout > datetime.datetime.now(pytz.timezone('Europe/London'))):
@@ -126,7 +126,7 @@ class WeatherFetcher:
                     timeout += datetime.timedelta(minutes=60) # Don't keep the cache for too long, just long enough to avoid request spam
                     self.jsoncacheTimeout = timeout
 
-                    timeout = datetime.datetime.now(pytz.timezone('Europe/London'))
+                    timeout = datetime.datetime.now() # pytz.timezone('Europe/London')
                     timeout += datetime.timedelta(minutes=60) # Don't keep the cache for too long, just long enough to avoid request spam
                     self.cacheTimeout = timeout
 

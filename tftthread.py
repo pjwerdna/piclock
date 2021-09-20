@@ -2,7 +2,8 @@
 
 # TFT running both input and output
 # Also handles volume slider (right side)
-# Alarm cancelling
+# Alarm cancelling (Center when alarm playing)
+# Menus (Center when alarm Not playing)
 # radio control (left side)
 
 # 27/03/2020 - Actually uses SCREEN_HEIGHT and SCREEN_WIDTH
@@ -10,6 +11,9 @@
 # 18/10/2020 - Moved setting & adding to extra message into a function
 # 26/01/2021 - Moved player monitoring to player Thread
 #              Message creation & store moved to each thread
+# 26/05/2021 - Volume slider is now changing volumepercent i.e. usable volume
+# 30/05/2021 - Only try for weather if its been setup
+# 11/09/2021 - Added mqtt input & output of display colour
 
 #from LCDControl.LCDControl import LCDControl
 #import gaugette.rotary_encoder
@@ -91,6 +95,7 @@ class TFTThread(threading.Thread):
       self.lcd = self
       self.caller = Callback
       self.media = None #media
+      self.mqttbroker = None
 
       self.message=""
       self.volumebar = False
@@ -121,7 +126,7 @@ class TFTThread(threading.Thread):
       #~ for fontname in fontlist:
           #~ print fontname
 
-      self.CurrentVolume = int(self.settings.get('volume'))
+      self.CurrentVolume = int(self.settings.get('volumepercent'))
       self.VisibleVolume = self.CurrentVolume
       self.ClockFontName = None
       self.newvolume = self.CurrentVolume
@@ -132,7 +137,7 @@ class TFTThread(threading.Thread):
 
       self.weather = None #weather
 
-      #Start menu thread
+      #Start menu thread (Later)
       #self.menu = MenuControl.MenuControl(self, media, weather, Callback)
       #self.menu.setDaemon(True)
       self.menu = None
@@ -165,6 +170,43 @@ class TFTThread(threading.Thread):
       # We get passes a value from 0 - 15, which we need to scale to 0-255 before passing to LCDControl
       # colVal = int(255 * (float(brightness)/15))
       # self.lcd.setColour(colVal,colVal,colVal)
+
+   def SetClockColour(self, colourValue): 
+        # Input is 3 value csv String "R,G,B"
+        # ClockColour variable is a 3 part tupple (R, G, B)
+
+        try:
+            colourRGB = colourValue.split(",")
+            self.settings.set('clock_colour', str(colourRGB[0])+","+str(colourRGB[1])+","+str(colourRGB[2]))
+        except ValueError:
+            log.warn("Could not decode '%s' as colour. Using default",colourValue)
+        self.ClockColour = self.settings.getcolour('clock_colour')
+        if (self.mqttbroker != None):
+            colourR, colourG, colourB = self.settings.getcolour('clock_colour')
+            self.mqttbroker.publish("display/colourRGB", str(colourR)+","+str(colourG)+","+str(colourB))
+            self.mqttbroker.publish("display/colorRGB", str(colourR)+","+str(colourG)+","+str(colourB))
+        
+   def on_message(self, topic ,payload):
+      method = topic[0:topic.find("/")] # before first "/"
+      item = topic[topic.rfind("/")+1:]   # after last "/"
+      log.info("TFT method='%s', item='%s'", method, item)
+      done = False
+      try:
+         if (method == "display"):
+            if (item == "colourRGB") or (item == "colorRGB"):
+                log.debug("colour = '%s'", payload)
+                #RGBcolour = payload.split(",")
+                try:
+                    self.SetClockColour(payload)
+                    #self.settings.set('clock_colour', str(RGBcolour[0])+","+str(RGBcolour[1])+","+str(RGBcolour[2]))
+                    #self.ClockColour = self.settings.getcolour('clock_colour')
+                except ValueError:
+                    log.warn("Could not decode %s as colour", payload)
+            done = True
+
+      except Exception as e:
+         log.debug("on_message Error: %s" , e)
+      return done # not for me  
 
 
    # From clock thread
@@ -200,28 +242,34 @@ class TFTThread(threading.Thread):
                 self.segmentwidth = 40
                 self.segmentheight = 40
 
-
    def SetExtraMessage(self,NewMessage, CheckInterval = -1):
         self.ExtraMessage = NewMessage
         if (CheckInterval != -1) :
             self.checkmessage = CheckInterval
+        if (self.mqttbroker != None):
+            self.mqttbroker.publish("radio/text", self.ExtraMessage)
 
    def AddToExtraMessage(self,NewMessage, CheckInterval = -1):
         self.ExtraMessage += NewMessage
         if (CheckInterval != -1) :
             self.checkmessage = CheckInterval
+        if (self.mqttbroker != None):
+            self.mqttbroker.publish("radio/text", self.ExtraMessage)
 
-
-   # Original stuff
-
-   def SetConfig(self, alarmThread, media, weather, brightnessthreadptr):  #Remaining info to allow startup
+   def SetConfig(self, alarmThread, media, weather, brightnessthreadptr, mqttbroker):  #Remaining info to allow startup
       self.alarmThread = alarmThread
       self.media = media
       self.weather = weather
       self.brightness = brightnessthreadptr
       # Startup Menu Thread
       self.menu = MenuControl.MenuControl(self, self.media, self.weather, self.caller, self.brightness)
-      self.menu.setDaemon(True)
+      #self.menu.setDaemon(True)
+      self.mqttbroker = mqttbroker
+      if (self.mqttbroker != None):
+          self.mqttbroker.publish("radio/text", self.ExtraMessage)      
+          self.mqttbroker.publish("radio/name", self.message + " ")
+          self.mqttbroker.publish("display/colourRGB", str(self.settings.getcolour('clock_colour')))
+          self.mqttbroker.publish("display/colorRGB", str(self.settings.getcolour('clock_colour')))
 
    def ChooseFonts(self):
       if (self.settings.getorset('menu_font','') == ""):
@@ -247,7 +295,6 @@ class TFTThread(threading.Thread):
             self.ClockFontName = self.settings.get('clock_font')
             getfont = pygame.font.match_font(self.ClockFontName) # "dseg14modern")
             self.font_big = pygame.font.Font(getfont,130)
-
 
    def SetBigMessage(self,newMessage,center=False, colour = (255,255,255), ExtraText= "" ):
      # ExtraText will scroll along the bottom of the screen if its too long
@@ -342,7 +389,10 @@ class TFTThread(threading.Thread):
 
    def setMessage(self,newMessage,center=False, colour = colours.RED):
      if newMessage != self.message:
-         self.message = newMessage
+        self.message = newMessage
+        if (self.mqttbroker != None):
+            self.mqttbroker.publish("radio/name", self.message + " ")
+
      area = self.tftScreen.fill((0,0,0))
      text_surface = self.font_normal.render(newMessage, True, colour)
      rect = text_surface.get_rect(center=(240,160))
@@ -565,7 +615,7 @@ class TFTThread(threading.Thread):
     def ControlRadioSetStation(Control):
         # Control[KEY_SelectedValue]
         self.settings.set('station', Control[KEY_SelectedValue])
-        return Settings.STATIONS[self.settings.getInt('station')]['name']
+        return self.settings.getStationName(self.settings.getInt('station'))
 
     self.caller.pauseclock(True)
     self.tftScreen.fill((0,0,0))
@@ -595,11 +645,11 @@ class TFTThread(threading.Thread):
 
     #~ self.DisplayLabel(150,100,"Station",colours.GREEN)
 
-    StationList = []
-    for stationname in Settings.STATIONS:
-        StationList.append(stationname['name'])
+    #SxtationList = []
+    #for stationname in self.settings.STATIONS:
+    #    SxtationList.append(stationname['name'])
     DefaultStation = self.settings.getInt('station')
-    radioselector = self.DisplaySelectValueFromList("",75, 120, DefaultStation, StationList, colour, ControlRadioSetStation)
+    radioselector = self.DisplaySelectValueFromList("",75, 120, DefaultStation, self.settings.getStationList(), colour, ControlRadioSetStation)
 
     Controls.append(list(radioselector))
 
@@ -914,9 +964,9 @@ class TFTThread(threading.Thread):
 
     self.DisplayLabel(20,140,"Station",colours.GREEN)
 
-    StationList = []
-    for stationname in Settings.STATIONS:
-        StationList.append(stationname['name'])
+    StationList = self.settings.getAllStationInfo()
+    #for stationname in self.settings.STATIONS:
+    #    StationList.append(stationname['name'])
     radioselector = self.DisplaySelectValueFromList("",10, 220, alarmstation, StationList, colour)
     Controls.append(list(radioselector))
 
@@ -1330,7 +1380,7 @@ class TFTThread(threading.Thread):
    def showvolume(self, newstate):
         self.volumebar = newstate
         if (self.volumebar == True):
-            self.CurrentVolume = int(self.settings.get('volume'))
+            self.CurrentVolume = int(self.settings.get('volumepercent'))
             area = self.VolumeSlider(self.CurrentVolume, colours.GREEN)
             #~ self.SleepTime = 0.1
         else:
@@ -1440,13 +1490,6 @@ class TFTThread(threading.Thread):
     self.caller.pauseclock(False)
 
    def run(self):
-      # self.menu.start()
-
-      #~ self.setMessage("Boot finished")
-
-      #loopcount = 0
-
-      #oldvolume = self.CurrentVolume
 
       self.SleepTime = float(0.1)
       volumedragstart = -1
@@ -1462,6 +1505,10 @@ class TFTThread(threading.Thread):
       quickpoll = False
       LastTime = datetime.datetime.now()
 
+      # extract, Set and export clock info'
+      colourR, colourG, colourB = self.settings.getcolour('clock_colour')
+      self.SetClockColour(str(colourR)+","+str(colourG)+","+str(colourB))
+
       #~ self.settings.set("quiet_reboot","0")
 
       while(not self.stopping):
@@ -1474,12 +1521,13 @@ class TFTThread(threading.Thread):
             second = now.second
 
             if (self.pausedState == False ) and ((second != lastsecond) or (quickpoll == True)):
-                #log.info("%d:%d:%d", hour, minute, second)
+                
                 if (self.lcd.ClockFontName == None):
 
                     hour = now.hour
                     minute = now.minute
                     second = now.second
+                    #log.info("%d:%d:%d", hour, minute, second)
 
                     self.Lasthourtens  = self.ClockSegment(0, int(hour / 10), self.Lasthourtens)
                     self.Lasthoutunits = self.ClockSegment(1, hour % 10, self.Lasthoutunits)
@@ -1528,13 +1576,13 @@ class TFTThread(threading.Thread):
 
                 for event in pygame.event.get():
 
-                   mx,my = event.pos
-                   if (event.type is MOUSEBUTTONUP):
+                    mx,my = event.pos
+                    if (event.type is MOUSEBUTTONUP):
 
-                        if (volumedragstart <> -1): # volume was being dragged
+                        if (volumedragstart != -1): # volume was being dragged
                                 volumedragstart = -1
                                 self.lcd.showvolume(False)
-                                self.settings.set('volume',self.lcd.newvolume)
+                                self.settings.set('volumepercent',self.lcd.newvolume)
                                 self.lcd.CurrentVolume = self.lcd.newvolume
 
                         elif self.alarmThread.isAlarmSounding():
@@ -1543,7 +1591,8 @@ class TFTThread(threading.Thread):
 
                         elif (mx > CONTROL_ZONE) and (mx < SCREEN_WIDTH - CONTROL_ZONE): # i the middle
 
-                            if (my > SCREEN_HEIGHT - CONTROL_ZONE): # bottom tap
+                            # bottom tap and Weather has been setup
+                            if (my > SCREEN_HEIGHT - CONTROL_ZONE) and (self.settings.get('WUG_KEY') != ""): 
                                 #~ self.caller.clockMessage("Discovering Weather...")
                                 self.SetExtraMessage("Discovering Weather...",20)
                                 LocalWeather = self.weather.getWeather()
@@ -1578,19 +1627,19 @@ class TFTThread(threading.Thread):
                             self.ControlRadio()
                             self.checkmessage = 1
 
-                   elif (event.type is MOUSEBUTTONDOWN) and (mx > SCREEN_WIDTH - CONTROL_ZONE): # Start Volume drag
+                    elif (event.type is MOUSEBUTTONDOWN) and (mx > SCREEN_WIDTH - CONTROL_ZONE): # Start Volume drag
 
                        if (volumedragstart == -1):
                             volumedragstart = my
                             self.lcd.showvolume(True)
 
-                   elif (event.type is QUIT):
+                    elif (event.type is QUIT):
                         self.stop()
 
-                   elif (volumedragstart <> -1) and (event.type is MOUSEMOTION): # if volume open change volume
+                    elif (volumedragstart != -1) and (event.type is MOUSEMOTION): # if volume open change volume
 
                         Adjustment = int(round((volumedragstart - my)/20.0))
-                        if Adjustment <> 0:
+                        if Adjustment != 0:
                             volumedragstart = my
                             log.info("volume adjustment %d", Adjustment)
                             newvolume = self.lcd.newvolume + Adjustment
@@ -1624,11 +1673,12 @@ class TFTThread(threading.Thread):
 
                 message += self.media.message
 
+                ' Disabled as check and message is done in MediaPlayer.py'
                 if False and self.media.playerActive(): # self.menu.backgroundRadioActive():
                     self.checkmessage = 10
                     try:
                         currentplayerpos = self.media.player.stream_pos
-                        if (currentplayerpos > lastplayerpos) and (currentplayerpos <> None):
+                        if (currentplayerpos > lastplayerpos) and (currentplayerpos != None):
                            message += ", Radio Playing"
                            #~ NoneCount = 0
                         elif (currentplayerpos == None) or (lastplayerpos == -1):

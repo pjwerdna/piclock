@@ -24,6 +24,7 @@ import urllib2
 # 24/01/2021 - Actually call media.restartPlayer
 # 26/01/2021 - Moved player monitoring to player Thread
 # 08/05/2021 - Fixed minor syntax errors.
+# 10/08/2021 - Moved player monitoring to mediaplayer thread so it works when not playing an alarm 
 
 log = logging.getLogger('root')
 
@@ -37,11 +38,12 @@ def splitNumber(num):
 
 class AlarmThread(threading.Thread):
 
-   def __init__(self, weatherFetcher, Mediaplayer, Settings):
+   def __init__(self, weatherFetcher, Mediaplayer, Settings, mqttbroker):
       threading.Thread.__init__(self)
       self.stopping=False
       self.nextAlarm=None
       self.nextAlarmStation = -1
+      self.nextAlarmDayNo = -1
       self.alarmTimeout=None
       self.snoozing = False
       self.message = ""
@@ -53,6 +55,7 @@ class AlarmThread(threading.Thread):
       self.media = Mediaplayer #MediaPlayer.MediaPlayer()
       self.alarmGatherer = AlarmGatherer.AlarmGatherer(Mediaplayer)
       self.weather = weatherFetcher
+      self.mqttbroker = mqttbroker
 
       self.fromEvent = False # False if auto or manual, True if from an event
 
@@ -295,8 +298,18 @@ class AlarmThread(threading.Thread):
          #~ else:
          self.fromEvent = True
 
-         self.setAlarmTime(nextAlarm, self.settings.getInt('alarm_station_' + str(weekday)), self.settings.getInt("alarm_volume_" + str(weekday)))
+         self.setAlarmTime(nextAlarm, self.settings.getInt('alarm_station_' + str(weekday)), self.settings.getInt("alarm_volume_" + str(weekday)), weekday)
          self.settings.set('manual_alarm','') # We've just auto-set an alarm, so clear any manual ones
+
+         # Tell MQTT broker abou the alarm
+         if self.mqttbroker != None:
+            self.mqttbroker.publish("alarm/time",nextAlarm.strftime("%H:%M"))
+            self.mqttbroker.publish("alarm/date",nextAlarm.strftime("%d/%m/%Y"))
+            self.mqttbroker.publish("alarm/datetime",nextAlarm.strftime("%Y-%m-%dT%H:%M"))
+            # 2021-08-02T22:00:00
+            self.mqttbroker.publish("alarm/stationno",str(self.settings.getInt('alarm_station_' + str(weekday))))
+            self.mqttbroker.publish("alarm/stationname",self.settings.getStationName(self.settings.getInt('alarm_station_' + str(weekday))))
+            self.mqttbroker.publish("alarm/volume",str(self.settings.getInt("alarm_volume_" + str(weekday))))
 
          # Read out the time we've just set
          hour = nextAlarm.strftime("%I").lstrip("0")
@@ -343,9 +356,10 @@ class AlarmThread(threading.Thread):
           else:
                 self.media.playVoice('Manual alarm has been set')
 
-   def setAlarmTime(self,alarmTime, AlarmStation = -1, AlarmVolume= -1):
+   def setAlarmTime(self,alarmTime, AlarmStation = -1, AlarmVolume= -1, DayNo = -1):
       self.nextAlarm = alarmTime
       self.nextAlarmStation = AlarmStation
+      self.nextAlarmDayNo = DayNo
       if (AlarmVolume == -1):
           self.alarmVolume = self.settings.getInt("minvolume")
       else:
@@ -409,17 +423,58 @@ class AlarmThread(threading.Thread):
 
       return message
 
+   def publish(self):
+      for dayno in range(0,7):
+         self.mqttbroker.publish("alarms/%s/time" %(dayno), self.settings.get('alarm_weekday_' + str(dayno)))
+         self.mqttbroker.publish("alarms/%s/stationno" %(dayno), self.settings.get('alarm_station_' + str(dayno)))
+         self.mqttbroker.publish("alarms/%s/volume" %(dayno), self.settings.get('alarm_volume_' + str(dayno)))
+
+
+   def on_message(self, topic, payload):
+      try:
+         method = topic[0:topic.find("/")] # before first "/"
+         item = topic[topic.rfind("/")+1:]   # after last "/"
+         log.debug("method='%s', item='%s'", method, item)
+         done = False
+         if method == "alarms":
+            dayno = int(topic[topic.find("/")+1])
+            if (dayno >= 0) & (dayno <= 7):
+               if (item == "volume"):
+                  if (int(payload) <= 100) & (int(payload) >= 0):
+                     log.info("Setting volume for day %d to %s%%", dayno, int(payload))
+                     self.settings.set('alarm_volume_' + str(dayno), int(payload))
+                  else:
+                     log.info("volume out of range (0-100) , %s", payload)
+               elif (item == "stationno"):
+                  if (int(payload) < self.settings.stationCount) & (int(payload) >= 0):
+                     log.info("Setting Station No for day %d to %s", dayno, int(payload))
+                     self.settings.set('alarm_station_' + str(dayno), int(payload))
+                  else:
+                     log.info("station out of range (0-%s) , %s", self.settings.stationCount, payload)
+
+               if self.nextAlarmDayNo == dayno: # If the alarm day values changed we need to recalculate it
+                  self.autoSetAlarm(True)
+            else:
+               log.debug("dayno out of range (0-6) , %s" , dayno)
+            done = True
+
+      except Exception as e:
+         log.debug("on_message Error: %s" , e)
+      
+      return done
+
    def run(self):
 
       self.autoSetAlarm(self.settings.getIntOrSet('quiet_reboot') == 1)
       LastTime = datetime.datetime.now() #pytz.timezone('Europe/London'))
 
-      NoneCount = 0
+      #NoneCount = 0 # number of times player position is None for stall detection
 
       SleepTime = 1 #0.3
 
       lastPlayerPos = 0
       currentplayerpos = 0
+      lastalarmremaining = 0
 
       while(not self.stopping):
           now = datetime.datetime.now() #pytz.timezone('Europe/London'))
@@ -435,9 +490,14 @@ class AlarmThread(threading.Thread):
                 if diff <= datetime.timedelta(minutes=30):
                     self.soundAlarm()
 
-          if(self.alarmTimeout is not None and self.alarmTimeout < now):
-             log.info("Alarm timeout reached, stopping alarm")
-             self.stopAlarm()
+          if(self.alarmTimeout is not None):
+             alarmremaining = int((self.alarmTimeout - now).total_seconds()/60.0)
+             if (alarmremaining != lastalarmremaining) :
+               self.mqttbroker.publish("alarm/remaining",str(alarmremaining))
+               lastalarmremaining = alarmremaining
+             if (self.alarmTimeout < now):
+               log.info("Alarm timeout reached, stopping alarm")
+               self.stopAlarm()
 
           # Get what we have to play (if anything)
 
@@ -449,23 +509,23 @@ class AlarmThread(threading.Thread):
                     currentplayerpos = self.media.player.stream_pos
 
                     # Check if Player stuck or disconnected
-                    if (currentplayerpos == None) or (currentplayerpos == lastPlayerPos):
-                        NoneCount += 1
-                        log.info("nonecount=%d", NoneCount)
-                        log.info("currentplayerpos=%d", currentplayerpos)
-                        if (NoneCount > 20): # or (currentplayerpos == None):
-                            log.info("Player may be stuck, restarting")
-                            #~ self.snoozefor()
-                            #self.silenceAlarm()
+                    #if (currentplayerpos == None) or (currentplayerpos == lastPlayerPos):
+                    #    NoneCount += 1
+                    #    log.debug("nonecount=%d", NoneCount)
+                    #    #log.info("currentplayerpos=%d", currentplayerpos)
+                    #    if (NoneCount > 20): # or (currentplayerpos == None):
+                    #        log.info("Player may be stuck, restarting")
+                    #        #~ self.snoozefor()
+                    #        #self.silenceAlarm()
 
-                            #time.sleep(5)
+                    #        #time.sleep(5)
 
-                            #~ self.media.soundAlarm(self, self.nextAlarmStation)
-                            # self.media.playStationURL(self.media.CurrentStation, self.media.CurrentURL, self.media.CurrentStationNo)
-                            self.media.restartPlayer()
-                            NoneCount = 0
-                    else:
-                        NoneCount = 0
+                    #        #~ self.media.soundAlarm(self, self.nextAlarmStation)
+                    #        # self.media.playStationURL(self.media.CurrentStation, self.media.CurrentURL, self.media.CurrentStationNo)
+                    #        self.media.restartPlayer()
+                    #        NoneCount = 0
+                    #else:
+                    #    NoneCount = 0
 
                 except Exception as e:
                     log.exception("Error: %s" , e)
@@ -486,7 +546,7 @@ class AlarmThread(threading.Thread):
                       #self.settings.setVolume(self.settings.getInt('volume'))
                       self.settings.setVolume(self.alarmVolume)
                       self.increasingvolume = -1 # At required volume
-                      log.debug("Reached alarm volume level")
+                      log.info("Reached alarm volume level")
                   else:
                       self.settings.setVolume(self.increasingvolume)
 

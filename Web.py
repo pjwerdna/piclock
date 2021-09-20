@@ -3,7 +3,7 @@ from web import form
 from web.wsgiserver import CherryPyWSGIServer
 import time
 import datetime
-import pytz
+#import pytz
 import threading
 import logging
 import Settings
@@ -11,6 +11,7 @@ import random
 from hashlib import sha1
 import os
 import pickle
+import sys
 from wsgilog import WsgiLog
 import json
 
@@ -25,7 +26,7 @@ import json
 #              Should keep volume and volumepercent in step rounding permitting
 #              Home page of webserver updates every 10 seconds
 # 27/04/2021 - Fixed volume reading and writing
-# 08/05/2021 - Fixed minor syntax errors. Extendsion api?action=status syntax 
+# 08/05/2021 - Fixed minor syntax errors. Extended api?action=status syntax. Added mqtt Broker
 
 # fsapi based on
 # https://github.com/flammy/fsapi
@@ -68,6 +69,8 @@ global alarm, brightnessthread
 global settings
 global session
 
+friendlyName = "PiClock"
+softwareVersion = "1.1"
 # global AccessPin # Use setting DB directly
 
 # Player status as text
@@ -82,9 +85,11 @@ alarm = None
 
 log = logging.getLogger('root')
 
+# doesnt make much differance
+web.config.debug = False
+
 app = web.application(urls, globals())
 apphttp = web.application(urlshttp, globals())
-#~ app.run(WebLog)
 
 if web.config.get('_session') is None:
     log.debug("reading session from disk")
@@ -124,16 +129,18 @@ global replyno
 replyno = 0
 #~ session = None
 
-global StationList
-StationList = []
-for stationname in Settings.STATIONS:
-    StationList.append(stationname['name'])
+#global SxtationList
+#SxtationList = []
+#for stationname in Settings.STATIONS:
+#    SxtationList.append(stationname['name'])
 
 global iplist
 iplist = []
 
 global Poweredon
 Poweredon = False
+
+global mqttBroker
 
 def GetIPForNetwork(Network): # find the IP of the given network
     ipv4 = os.popen('ip addr show ' + Network).read()
@@ -175,7 +182,7 @@ def Getminsselector(requiredID,requiredSelection):
 
 def Getradioselector(requiredID,requiredSelection):
     radioselector = '<select id=' + requiredID + ' name="' + requiredID + '">'
-    for stationname in Settings.STATIONS:
+    for stationname in settings.getAllStationInfo():
         if stationname['name'] == requiredSelection:
             radioselector += '<option selected value="' + stationname['name'] +'">' + stationname['name'] +'</option>\n'
         else:
@@ -292,7 +299,7 @@ class error:
 
 class index:
    def getAlarmForm(self):
-      global alarm, StationList
+      global alarm #, SxtationList
 
       nextAlarm = alarm.getNextAlarm()
       alarmTime = ""
@@ -300,9 +307,9 @@ class index:
       if nextAlarm is not None:
          alarmTime = nextAlarm.strftime("%H%M")
 
-      #~ StationList = []
+      #~ SxtationList = []
       #~ for stationname in Settings.STATIONS:
-            #~ StationList.append(stationname['name'])
+            #~ SxtationList.append(stationname['name'])
 
       return form.Form(
          form.Textbox("time",
@@ -311,7 +318,7 @@ class index:
             description="Set alarm time",
             value = alarmTime,
          ),
-         form.Dropdown('station', args = StationList, description="Station", value = StationList[int(settings.getIntOrSet('default_station',0))]),
+         form.Dropdown('station', args = settings.getStationList(), description="Station", value = settings.getStationName(int(settings.getIntOrSet('default_station',0)))),
       )
 
    def GET(self):
@@ -322,7 +329,7 @@ class index:
         return render.index(form,alarm, session)
 
    def POST(self):
-      global alarm, StationList
+      global alarm #, SxtationList
       form = self.getAlarmForm()()
       if not form.validates():
          return render.index(form,alarm, session)
@@ -340,7 +347,7 @@ class index:
       if form['time'].value != alarmTime :
           alarmHour = int(form['time'].value[:2])
           alarmMin = int(form['time'].value[2:])
-          time = datetime.datetime.now(pytz.timezone('Europe/London'))
+          time = datetime.datetime.now() # pytz.timezone('Europe/London')
 
           # So we don't set an alarm in the past
           if alarmHour < time.hour:
@@ -350,9 +357,9 @@ class index:
           alarm.manualSetAlarm(time, NewDefaultStation)
       else:
         time = nextAlarm
-        #~ StationList = []
+        #~ SxtationList = []
         #~ for stationname in Settings.STATIONS:
-            #~ StationList.append(stationname['name'])
+            #~ SxtationList.append(stationname['name'])
 
 
 
@@ -399,11 +406,19 @@ class set:
             #~ description="Home location",
             #~ value=settings.get('location_home'),
          #~ ),
-         #~ form.Textbox("work",
-            #~ form.notnull,
-            #~ description="Work location",
-            #~ value=settings.get('location_work'),
-         #~ ),
+         form.Textbox("mqttbroker",
+            form.notnull,
+            description="MQTT Broker",
+            value=settings.getorset('mqttbroker',''),
+         ),
+         form.Textbox("mqttbrokeruser", # LEave it blank by default
+            description="MQTT Broker username",
+            value="", #settings.getorset('mqttbrokeruser',''),
+         ),
+         form.Password("mqttbrokerpass",
+            description="MQTT Broker Password",
+            value="" #settings.getorset('mqttbrokerpass',''),
+         ),
          form.Textbox("weatherloc",
             form.notnull,
             description="Weather location",
@@ -535,6 +550,18 @@ class set:
          changes.append("Set API Pin")
          settings.set('apipin', form['newpin'].value)
 
+      if form['mqttbroker'].value != settings.get('mqttbroker'):
+         changes.append("Set MQTT Broker server to %s" % (form['mqttbroker'].value))
+         settings.set('mqttbroker', form['mqttbroker'].value)
+
+      if form['mqttbrokeruser'].value != "": # was != settings.get('mqttbrokeruser'
+         changes.append("Set MQTT Broker user to %s" % (form['mqttbrokeruser'].value))
+         settings.set('mqttbrokeruser', form['mqttbrokeruser'].value)
+
+      if form['mqttbrokerpass'].value != "":
+         changes.append("Set MQTT Broker password")
+         settings.set('mqttbrokerpass', form['mqttbrokerpass'].value)
+
       if form['weatherloc'].value != settings.get('weather_location'):
          changes.append("Set weather location to %s" % (form['weatherloc'].value))
          settings.set('weather_location', form['weatherloc'].value)
@@ -620,59 +647,63 @@ class set:
 
 
 class alarms:
-   def getForm(self):
-      global StationList
+    def getForm(self):
+      #global SxtationList
 
-      #~ StationList = []
+      log.info("start alarm getform")
+      #~ SxtationList = []
       #~ for stationname in Settings.STATIONS:
-            #~ StationList.append(stationname['name'])
+            #~ SxtationList.append(stationname['name'])
 
       #~ dopost = []
       #~ for dayno in range(0,7):
         #~ #  '</td>\n<td><label for="xalarm_station_' + str(dayno) + '"></label></td><td>' +
-        #~ dopost.append(form.Dropdown('newalarm_station_' + str(dayno), args = StationList, value = StationList[int(settings.get('alarm_station_' + str(dayno)))]).render())
+        #~ dopost.append(form.Dropdown('newalarm_station_' + str(dayno), args = SxtationList, value = SxtationList[int(settings.get('alarm_station_' + str(dayno)))]).render())
 
         #~ log.info(dopost[dayno])
+      StationList = settings.getStationList()
 
       return form.Form(
         #~ Expliots HTML rendering and "feature" of Web.py forms to display text box and dropdown
         #~ on same table row by commenting out the end-of-row + beginning-of-next-row.
         # Not used I thik
-
+ 
         form.Textbox('alarm_weekday_0', description="Monday", post=" <!-- " ,  value=settings.get('alarm_weekday_0'), size="5", maxlength="5"),
-        form.Dropdown('alarm_station_0', args = StationList, pre = " -->", description="", value = StationList[int(settings.get('alarm_station_0'))]),
+        form.Dropdown('alarm_station_0', args = StationList, pre = " -->", description="", value = settings.getStationName(int(settings.get('alarm_station_0')))),
 
         form.Textbox('alarm_weekday_1', description="Tuesday", post=" <!-- " , value=settings.get('alarm_weekday_1'), size="5", maxlength="5"),
-        form.Dropdown('alarm_station_1', args = StationList, pre = " -->", description="", value = StationList[int(settings.get('alarm_station_1'))]),
+        form.Dropdown('alarm_station_1', args = StationList, pre = " -->", description="", value = settings.getStationName(int(settings.get('alarm_station_1')))),
 
         form.Textbox('alarm_weekday_2', description="Wednesday", post=" <!-- ", value=settings.get('alarm_weekday_2'), size="5", maxlength="5"),
-        form.Dropdown('alarm_station_2', args = StationList, pre = " -->", description="", value = StationList[int(settings.get('alarm_station_2'))]),
+        form.Dropdown('alarm_station_2', args = StationList, pre = " -->", description="", value = settings.getStationName(int(settings.get('alarm_station_2')))),
 
         form.Textbox('alarm_weekday_3', description="Thursday", post=" <!-- ", value=settings.get('alarm_weekday_3'), size="5", maxlength="5"),
-        form.Dropdown('alarm_station_3', args = StationList, pre = " -->", description="", value = StationList[int(settings.get('alarm_station_3'))]),
+        form.Dropdown('alarm_station_3', args = StationList, pre = " -->", description="", value = settings.getStationName(int(settings.get('alarm_station_3')))),
 
         form.Textbox('alarm_weekday_4', description="Friday", post=" <!-- ", value=settings.get('alarm_weekday_4'), size="5", maxlength="5"),
-        form.Dropdown('alarm_station_4', args = StationList, pre = " -->", description="", value = StationList[int(settings.get('alarm_station_4'))]),
+        form.Dropdown('alarm_station_4', args = StationList, pre = " -->", description="", value = settings.getStationName(int(settings.get('alarm_station_4')))),
 
         form.Textbox('alarm_weekday_5', description="Saturday", post=" <!-- ", value=settings.get('alarm_weekday_5'), size="5", maxlength="5"),
-        form.Dropdown('alarm_station_5', args = StationList, pre = " -->", description="", value = StationList[int(settings.get('alarm_station_5'))]),
+        form.Dropdown('alarm_station_5', args = StationList, pre = " -->", description="", value = settings.getStationName(int(settings.get('alarm_station_5')))),
 
         form.Textbox('alarm_weekday_6', description="Sunday", post=" <!-- ", value=settings.get('alarm_weekday_6'), size="5", maxlength="5"),
-        form.Dropdown('alarm_station_6', args = StationList, pre = " -->", description="", value = StationList[int(settings.get('alarm_station_6'))]),
+        form.Dropdown('alarm_station_6', args = StationList, pre = " -->", description="", value = settings.getStationName(int(settings.get('alarm_station_6')))),
+       
       )
+      log.info("done alarm get form")
 
-   def DailyAlamInfo(self,Dayno):
+    def DailyAlamInfo(self,Dayno):
         AlarmTime = settings.get('alarm_weekday_' + Dayno)
-        AlarmStation = int(settings.get('alarm_station_' + Dayno))
+        AlarmStation = settings.getInt('alarm_station_' + Dayno)
         AlarmHours = Gethoursselector('alarm_weekday_hours_' + Dayno, int(AlarmTime[:2]))
         AlarmMins  = Getminsselector('alarm_weekday_mins_' + Dayno , int(AlarmTime[3:]))
-        AlarmStation = Getradioselector('alarm_station_'+ Dayno, StationList[int(settings.get('alarm_station_' + Dayno))])
+        AlarmStation = Getradioselector('alarm_station_'+ Dayno, settings.getStationName(settings.getInt('alarm_station_' + Dayno)))
         AlarmVolume = Getvolumelist('alarm_volume_'+ Dayno, int(settings.getorset('alarm_volume_' + Dayno,settings.get('volume'))))
 
         return AlarmHours, AlarmMins, AlarmStation, AlarmVolume
 
 
-   def GET(self):
+    def GET(self):
       #~ global session
       if userLoggedout(session):
         raise web.seeother('/signin')
@@ -689,9 +720,9 @@ class alarms:
 
           return render.alarms(alarm_weekday_0,alarm_weekday_1,alarm_weekday_2,alarm_weekday_3,alarm_weekday_4,alarm_weekday_5,alarm_weekday_6,"")
 
-   def POST(self):
+    def POST(self):
       #~ global session, users
-      global StationList
+      #global SxtationList
       form = self.getForm()()
       if not form.validates():
          alarm_weekday_0 = self.DailyAlamInfo("0")
@@ -715,12 +746,13 @@ class alarms:
             #~ log.info("%s = %s", x.name, x.value)
 
       user_data = web.input()
-      for x in user_data:
-            log.info("%s = %s", x, user_data[x])
+      # Debuggng bits
+      #for x in user_data:
+      #      log.info("%s = %s", x, user_data[x])
 
-      #~ StationList = []
+      #~ SxtationList = []
       #~ for stationname in Settings.STATIONS:
-            #~ StationList.append(stationname['name'])
+            #~ SxtationList.append(stationname['name'])
 
       # Decode alarm settings. Theyre  based round daynames
       daynames = [ "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
@@ -730,13 +762,13 @@ class alarms:
             if (newtime[2]==":") and (len(newtime) == 5) and (newtime[:1].isdecimal()) and (newtime[3:].isdecimal()):
                 changes.append("%s Alarm set to %s" % (daynames[dayno], newtime))
                 settings.set('alarm_weekday_' + str(dayno), newtime)
-          if StationList.index(user_data['alarm_station_' + str(dayno)]) != settings.getInt('alarm_station_' + str(dayno)):
-            settings.set('alarm_station_' + str(dayno), user_data['alarm_station_' + str(dayno)])
-            newstation = StationList[StationList.index(settings.getInt('alarm_station_' + str(dayno)))]
+          if settings.getStationNumberFromName(user_data['alarm_station_' + str(dayno)]) != settings.getInt('alarm_station_' + str(dayno)):
+            settings.set('alarm_station_' + str(dayno), settings.getStationNumberFromName(user_data['alarm_station_' + str(dayno)]))
+            newstation = settings.getStationName(settings.getInt('alarm_station_' + str(dayno)))
             changes.append("%s Station Set to %s" % (daynames[dayno], newstation))
           #
           if user_data['alarm_volume_' + str(dayno)] != settings.get('alarm_volume_' + str(dayno)):
-            settings.set('alarm_volume_' + str(dayno), user_data['alarm_volume_' + str(dayno)])
+            self.set_alarm_volume(dayno, user_data['alarm_volume_' + str(dayno)])  
             changes.append("%s Volume Set to %s%%" % (daynames[dayno], settings.getInt('alarm_volume_' + str(dayno))))
 
       text = "Configuring alarms:<p><ul><li>%s</li></ul>" % ("</li><li>".join(changes))
@@ -754,14 +786,19 @@ class alarms:
       return render.alarms(alarm_weekday_0,alarm_weekday_1,alarm_weekday_2,alarm_weekday_3,alarm_weekday_4,alarm_weekday_5,alarm_weekday_6, text)
       #~ return render.confirmation(text)
 
+def set_alarm_volume(self, Dayno, value):
+    settings.set('alarm_volume_' + str(dayno), value)
+    
+
+
 
 class player:
    def getForm(self):
       #~ global session
 
-      #~ StationList = []
+      #~ SxtationList = []
       #~ for stationname in Settings.STATIONS:
-            #~ StationList.append(stationname['name'])
+            #~ SxtationList.append(stationname['name'])
 
       #~ if media.playerActive():
             #~ Status = "Playing"
@@ -905,7 +942,7 @@ class signin:
 
 class api: # returns json describing the Player State
     def GET(self):
-        global StationList, iplist
+        global iplist # SxtationList
         RequesterIP = web.ctx['ip']
         #~ log.info("%s=%s" %(RequesterIP, iplist[0]))
         #~ if (iplist.index(RequesterIP) == -1 ):
@@ -931,18 +968,18 @@ class api: # returns json describing the Player State
             iStatus = 0
 
         if   (ApiAction == "play"): # or (ApiAction == "play" and ApiAction == "radio"):
-            #~ StationList = []
+            #~ SxtationList = []
             #~ for stationname in Settings.STATIONS:
-                #~ StationList.append(stationname['name'])
+                #~ SxtationList.append(stationname['name'])
 
             try:
 
-                newStationNo = int(StationList.index(ApiValue))
+                newStationNo = int(settings.getStationNumberFromName(ApiValue))
             except:
                 newStationNo = 0
 
             # Check station not already active (which is a string)
-            newstation = StationList[newStationNo]
+            newstation = settings.getStationName(newStationNo)
             if (iStatus == 0) or (media.playerActiveStation() != newstation):
                 # Need to stop the alarm or it will retrigger
                 if alarm.isAlarmSounding():
@@ -952,20 +989,25 @@ class api: # returns json describing the Player State
 
                 #~ log.info("Playing : " + newstation)
                 media.playStation(newStationNo)
+            ApiValue = "status"
 
         elif ApiAction == "stop":
             if (iStatus == 1) or (iStatus == 2):
                 media.stopPlayer()
+            ApiValue = "status"
 
         elif ApiAction == "pause":
             if (iStatus != 0):
                 log.info("Pausing")
                 media.pausePlayer()
+            ApiValue = "status"
 
         elif ApiAction == "brighter":
             brightnessthread.setBrightnessTweak(brightnessthread.getBrightnessTweak() + 3)
+            ApiValue = "status"
         elif ApiAction == "dimmer":
             brightnessthread.setBrightnessTweak(brightnessthread.getBrightnessTweak() -3)
+            ApiValue = "status"
 
         elif ApiAction == "brightnesschange":
             NewTweak = brightnessthread.getBrightnessTweak() + int(ApiValue)
@@ -975,6 +1017,7 @@ class api: # returns json describing the Player State
                     NewTweak = 0
             log.info("tweak = %d", NewTweak)
             brightnessthread.setBrightnessTweak(NewTweak)
+            ApiValue = "status"
             #~ elif (settings.getInt('brightness_tweak') <100) and (Change > 0):
             #~ MainLoop.setBrightnessTweak(MainLoop.getBrightnessTweak() -Change)
 
@@ -987,16 +1030,19 @@ class api: # returns json describing the Player State
                 NewVolume = 0
 
             settings.set('volumepercent',NewVolume)
+            ApiValue = ""
 
         elif (ApiAction == "cancelalarm") or ((ApiAction == "off") and( ApiValue == "alarm")):
             alarm.stopAlarm()
+            ApiValue = "status"
 
         elif ApiAction == "snoozealarm":
             alarm.snooze()
+            ApiValue = "status"
 
         #~ elif ApiAction == "SetAlarmStation":
             #~ AlarmStation = ApiValue
-            #~ NewAlarmStation = StationList.index(ApiValue)
+            #~ NewAlarmStation = SxtationList.index(ApiValue)
             #~ if settings.get('default_station') != NewAlarmStation:
                 #~ settings.set('default_station', NewAlarmStation)
                 #~ alarm.manualSetAlarm(alarm.getNextAlarm(), NewAlarmStation)
@@ -1004,7 +1050,7 @@ class api: # returns json describing the Player State
         elif ApiAction == "SetAlarmInfo":
 
             CurrentAlarmStation = alarm.nextAlarmStation
-            NewAlarmStation = StationList.index(ApiValue)
+            NewAlarmStation = settings.getStationNumberFromName(ApiValue)
 
             # need the extra info
             ApiValue = user_data.extravalue
@@ -1034,7 +1080,7 @@ class api: # returns json describing the Player State
             elif CurrentAlarmStation != NewAlarmStation:
                 CurrentAlarmStation = NewAlarmStation
                 alarm.manualSetAlarm(nextAlarm, CurrentAlarmStation)
-
+            ApiValue = "status"
 
         elif ApiAction == "off":
             if ApiAction == "volume":
@@ -1072,7 +1118,7 @@ class api: # returns json describing the Player State
                 iStatus = 0
 
             if alarm.nextAlarmStation != None:
-                AlarmStation = StationList[alarm.nextAlarmStation]
+                AlarmStation = settings.getStationName(alarm.nextAlarmStation)
             else:
                 AlarmStation = "None"
             AlarmTime = alarm.getNextAlarm()
@@ -1099,32 +1145,42 @@ class api: # returns json describing the Player State
         elif (ApiValue == "alarms"):
 
             Statusjson = {}
-            for dayno in range(6):
-                Statusjson['alarm_weekday_' + str(dayno)] = settings.get('alarm_weekday_' + str(dayno))
-                Statusjson['alarm_station_' + str(dayno)] = settings.get('alarm_station_' + str(dayno))
-                Statusjson['alarm_volume_' + str(dayno)]  = settings.get('alarm_volume_' + str(dayno))
+            for dayno in range(7):
+                Statusjson['alarm_' + str(dayno)] = {'station': settings.get('alarm_station_' + str(dayno)), 'time': settings.get('alarm_weekday_' + str(dayno)), 'volume': settings.get('alarm_volume_' + str(dayno))}
+                #Statusjson['alarm_weekday_' + str(dayno)] = settings.get('alarm_weekday_' + str(dayno))
+                #Statusjson['alarm_station_' + str(dayno)] = settings.get('alarm_station_' + str(dayno))
+                #Statusjson['alarm_volume_' + str(dayno)]  = settings.get('alarm_volume_' + str(dayno))
+
+        elif (ApiValue == "stations"):
+
+            Statusjson = {}
+            stationNo = 0
+            for stationname in settings.getAllStationInfo():
+                Statusjson['StationNo_' + str(stationNo)] = { 'name': stationname['name'], 'url':stationname['url'] }
+                #Statusjson['StationUrl_' + str(stationNo)] = stationname['url']
+                stationNo += 1
 
         else:
-            Statusjson = {'Status': "All"}
+            Statusjson = {'Status': "Unknown"}
 
         web.header('Content-Type','application/json')
         return json.dumps(Statusjson)
 
 class device:
     def GET(self):
-      returnValue = "<c8_array>PIClock</c8_array>"
+      returnValue = "<c8_array>" + friendlyName +"</c8_array>"
       NetworksIP = GetIPForNetwork("eth0")
 
       if (NetworksIP == ""):
           NetworksIP = GetIPForNetwork("wlan0")
 
-#        return "<fsapiResponse><status>FS_OK</status>" + str(returnValue) + "</fsapiResponse>"
-      return "<?xml version=\"1.0\"?>\n<netremote>\n<friendlyName>PIClock</friendlyName>\n<version>1.0</version>\n<webfsapi>http://" + NetworksIP + ":80/fsapi</webfsapi>\n</netremote>"
+      # return "<fsapiResponse><status>FS_OK</status>" + str(returnValue) + "</fsapiResponse>"
+      return "<?xml version=\"1.0\"?>\n<netRemote>\n<friendlyName>" + friendlyName +"</friendlyName>\n<version>" + softwareVersion + "</version>\n<webfsapi>http://" + NetworksIP + ":80/fsapi</webfsapi>\n</netRemote>"
 
 class fsapi: # returns FS API describing the Player State
     def GET(self,operation="", ApiAction=""):
         #,ApiAction
-        global alarm, StationList, iplist, Poweredon
+        global alarm, iplist, Poweredon
         returnValue = 0
         RequesterIP = web.ctx['ip']
         maxItems = 1
@@ -1153,7 +1209,7 @@ class fsapi: # returns FS API describing the Player State
             if (userLoggedout(session)) :
                 log.info("fsapi Not logged in %s", RequesterIP)
                 if (Fsapipin != settings.getorset('apipin',"123456")):
-                    log.info("API PIn dioesnt match")
+                    log.info("API Pin doesnt match")
                 return ("")
 
         #~ log.debug("API Action = %s " , ApiAction)
@@ -1166,7 +1222,7 @@ class fsapi: # returns FS API describing the Player State
         else:
             iStatus = 0
 
-        log.debug("fsapi \"%s\" %s, apivalue=%s", operation, ApiAction, FsapiValue)
+        #log.debug("fsapi \"%s\" %s, apivalue=%s", operation, ApiAction, FsapiValue)
 
         try:
             if ( operation == "CREATE_SESSION"):
@@ -1176,11 +1232,11 @@ class fsapi: # returns FS API describing the Player State
                 returnValue = "<value>0</value>"
                 #returnValue = "<c8_array>123456789</c8_array>"
             elif   (ApiAction == "play"): # or (ApiAction == "play" and ApiAction == "radio"):
-                #~ StationList = []
+                #~ SxtationList = []
                 #~ for stationname in Settings.STATIONS:
-                    #~ StationList.append(stationname['name'])
+                    #~ SxtationList.append(stationname['name'])
 
-                newstation = StationList[StationList.index(ApiValue)]
+                newstation = settings.getStationNumberFromName(ApiValue)
                 if (iStatus == 0) or (media.playerActiveStation() != newstation):
                     # Need to stop the alarm or it will retrigger
                     if alarm.isAlarmSounding():
@@ -1189,16 +1245,16 @@ class fsapi: # returns FS API describing the Player State
                         media.stopPlayer()
 
                     #~ log.info("Playing : " + newstation)
-                    media.playStation(StationList.index(ApiValue))
+                    media.playStation(newstation)
 
             elif ApiAction == "netRemote.play.control":
                 if (operation == "SET") :
                     if (FsapiValue == 2):
                         if alarm.isAlarmSounding():
                             alarm.stopAlarm()
-                        elif (iStatus == 1): # if playing something, but not an alarm
+                        else: #if (iStatus == 1):  if playing something, but not an alarm
                             media.stopPlayer()
-                    returnValue = "<value><u8>0</u8></value>"
+                    returnValue = "<value><u8>a</u8></value>"
                 else:
                     returnValue = "<value><u8>0</u8></value>"
 
@@ -1207,33 +1263,58 @@ class fsapi: # returns FS API describing the Player State
                     media.stopPlayer()
 
             elif ApiAction == "netRemote.sys.info.friendlyName":
-                if (operation == "LIST_GET_NEXT") :
-                    returnValue = "<value><c8_array>PiClock</c8_array></value>"
+                if (operation == "GET") :
+                    returnValue = "<value><c8_array>" + friendlyName + "</c8_array></value>"
+                else:
+                    returnValue = "<value><u8>0</u8></value>"
+
+            elif ApiAction == "netRemote.sys.info.version":
+                if (operation == "GET") :
+                    returnValue = "<value><c8_array>" + softwareVersion + "</c8_array></value>"
                 else:
                     returnValue = "<value><u8>0</u8></value>"
 
             elif ApiAction == "netRemote.play.info.name":
                 if (operation == "GET") :
                     if (media.playerActiveStationNo() >= 0):
-                        returnValue = "<value><c8_array>" + str(StationList[media.playerActiveStationNo()]) + "</c8_array></value>"
+                        returnValue = "<value><c8_array>" + settings.getStationName(media.playerActiveStationNo()) + "</c8_array></value>"
                     else:
                         returnValue = "<value><c8_array>" + "" + "</c8_array></value>"
                 else:
                     returnValue = "<value><u8>0</u8></value>"
-                log.debug("active station %s", returnValue)
+                #log.debug("active station %s", returnValue)
 
             elif ApiAction == "netRemote.play.info.text":
                 if (operation == "GET") :
                     returnValue = "<value><c8_array>" + tft.ExtraMessage + "</c8_array></value>"
                 else:
                     returnValue = "<value><c8_array>"+""+"</c8_array></value>"
-                log.debug("active text %s", returnValue)
+                #log.debug("active text %s", returnValue)
 
+            elif ApiAction == "netRemote.play.info.artist":
+                if (operation == "GET") :
+                    returnValue = "<value><c8_array>" + "" + "</c8_array></value>"
+                else:
+                    returnValue = "<value><c8_array>"+""+"</c8_array></value>"
+                #log.debug("active text %s", returnValue)
+
+            elif ApiAction == "netRemote.play.info.album":
+                if (operation == "GET") :
+                    returnValue = "<value><c8_array>" + "" + "</c8_array></value>"
+                else:
+                    returnValue = "<value><c8_array>"+""+"</c8_array></value>"
+
+            elif ApiAction == "netRemote.play.info.graphicUri":
+                if (operation == "GET") :
+                    returnValue = "<value><c8_array>" + "" + "</c8_array></value>"
+                else:
+                    returnValue = "<value><c8_array>"+""+"</c8_array></value>"
+                
             elif ApiAction == "netRemote.nav.presets/-1":
                 if (operation == "LIST_GET_NEXT") :
                     keyno = 1
                     returnValue = ""
-                    for stationname in Settings.STATIONS:
+                    for stationname in settings.getAllStationInfo():
                         returnValue += "<item key=\"" + str(keyno) + "\">\n"
                         returnValue += "<field name=\"name\"><c8_array>" + stationname['name'] + "</c8_array></field>\n"
                         returnValue += "</item>\n"
@@ -1246,7 +1327,7 @@ class fsapi: # returns FS API describing the Player State
 
             elif ApiAction == "netRemote.nav.action.selectPreset":
                 if (operation == "SET") :
-                    newstation = StationList[int(FsapiValue)-1]
+                    newstation = settings.getStationName(int(FsapiValue)-1)
                     if (iStatus == 0) or (media.playerActiveStation() != newstation):
                         # Need to stop the alarm or it will retrigger
                         if alarm.isAlarmSounding():
@@ -1336,11 +1417,6 @@ class fsapi: # returns FS API describing the Player State
                 else:
                     returnValue = "<value><u8>0</u8></value>"
 
-
-            elif ApiAction == "netRemote.sys.caps.volumeSteps":
-                if (operation == "GET") :
-                    returnValue = "<value><u8>31</u8></value>"
-
             elif ApiAction == "netRemote.sys.audio.volume":
                 # 0 to 31
                 if (operation == "GET") :
@@ -1357,6 +1433,11 @@ class fsapi: # returns FS API describing the Player State
 
                     settings.set('volumepercent',NewVolume)
                     returnValue = "<value><u8>"+str(FsapiValue)+"</u8></value>"
+
+            elif ApiAction == "netRemote.sys.caps.volumeSteps":
+                # 0 to 31
+                if (operation == "GET") :
+                    returnValue = "<value><u8>31</u8></value>"
 
             elif ApiAction == "netRemote.sys.audio.volumepercent":
                 if (operation == "GET") :
@@ -1401,16 +1482,19 @@ class fsapi: # returns FS API describing the Player State
                             alarm.stopAlarm()
                         if (iStatus > 0): # if playing something, but not an alarm
                             media.stopPlayer()
-                        returnValue = "<value><u8>1</u8></value>"
+                        returnValue = "<value><u8>0</u8></value>"
                         Poweredon = False
                         #~ log.debug("Set power=Off")
                     else:
-                        returnValue = "<value><u8>0</u8></value>"
+                        returnValue = "<value><u8>1</u8></value>"
                         Poweredon = True
                         #~ log.debug("Set power=On")
                 else:
                     returnValue = "<value><u8>0</u8></value>"
 
+            elif ApiAction == "netRemote.sys.info.friendlyname":
+                if (operation == "GET") :
+                    returnValue = "<value><u8>31</u8></value>"
 
             elif ApiAction == "off":
                 if ApiAction == "volume":
@@ -1432,7 +1516,15 @@ class fsapi: # returns FS API describing the Player State
                         NewVolume = 0
                     settings.set('volume',NewVolume)
 
-            elif ApiAction != "status":
+            elif (ApiAction == "netRemote.play.status") and (operation == "GET") :
+                if (iStatus == 2):
+                    returnValue = "<value><u8>3</u8></value>"
+                elif (iStatus == 1):
+                    returnValue = "<value><u8>2</u8></value>"
+                else:
+                    returnValue = "<value><u8>1</u8></value>"
+
+            elif (ApiAction != "status"):
                 log.debug("unknown api %s", ApiAction)
                 return "<?xml version=\"1.0\"?>\n<fsapiResponse>\n<status>FS_NODE_DOES_NOT_EXIST</status>\n</fsapiResponse>"
 
@@ -1444,7 +1536,7 @@ class fsapi: # returns FS API describing the Player State
         #~ CurrentStation = media.playerActiveStation()
 
         #~ if alarm.nextAlarmStation != None:
-            #~ AlarmStation = StationList[alarm.nextAlarmStation]
+            #~ AlarmStation = SxtationList[alarm.nextAlarmStation]
         #~ else:
             #~ AlarmStation = "None"
         #~ AlarmTime = alarm.getNextAlarm()
@@ -1471,10 +1563,11 @@ class fsapi: # returns FS API describing the Player State
         #~    'Volume' : settings.getInt('volume'), 'AlarmState': AlarmState, 'AlarmTIme':AlarmTime, 'AlarmStation':AlarmStation, 'NextAlarmType' : NextAlarmType}
 
         #web.header('Content-Type','application/json')
+        log.debug("fsapi '%s' '%s', apivalue='%s', returning '%s'", operation, ApiAction, FsapiValue, returnValue)
         return "<?xml version=\"1.0\"?>\n<fsapiResponse>\n<status>FS_OK</status>\n" + str(returnValue) + "\n</fsapiResponse>"
 
     def CREATE_SESSION(self,operation,ApiAction):
-        global alarm, StationList, iplist
+        global alarm, iplist
         returnValue = 0
         RequesterIP = web.ctx['ip']
         maxItems = 1
@@ -1489,14 +1582,15 @@ class fsapi: # returns FS API describing the Player State
         log.debug("Webdata %s", web.data)
 
 class WebApplication(threading.Thread):
-   def __init__(self, alarmThread, Settingsthread, Media, Caller, brightnessthreadptr):
-      global alarm, users, settings, media, MainLoop, brightnessthread, webcredential_path, iplist
+   def __init__(self, alarmThread, Settingsthread, Media, Caller, brightnessthreadptr, broker):
+      global alarm, users, settings, media, MainLoop, brightnessthread, webcredential_path, iplist,  mqttBroker
       threading.Thread.__init__(self)
       alarm = alarmThread
       brightnessthread = brightnessthreadptr
       settings = Settingsthread
       media = Media
       MainLoop = Caller
+      mqttBroker = broker
 
       if os.path.isfile(webcredential_path):
           #~ log.debug("getting webcredentials")
@@ -1523,7 +1617,7 @@ class WebApplication(threading.Thread):
 
       GetIPList()
 
-      log.debug("Starting up https web server")
+      log.debug("Starting HTTPS web server")
 
       #home_dir = os.getcwd() #os.path.expanduser('~')
       home_dir = "/home/pi/piclock" #os.path.expanduser('~')
@@ -1541,26 +1635,24 @@ class WebApplication(threading.Thread):
       #~ else:
         #~ self.session = web.config._session
 
+      # Doesnt seem to work
       web.config.debug = False
-      #~ web.config.log_file = "WebServer.log"
-      #~ web.config.log_toprint = False
-      #~ web.config.log_tofile = True
 
       #~ self.app.internalerror = web.debugerror
       web.httpserver.runsimple(app.wsgifunc(), ("0.0.0.0", 443))
-      log.debug("Web server has stopped")
+      log.debug("HTTP Web server has stopped")
 
    def stop(self):
       #~ global users
-      log.debug("Shutting down https web server")
+      log.debug("Shutting down HTTPS web server")
       #~ only do this when things have changed now
       #~ pickle.dump(users, open(webcredential_path, "wb" ) )
       app.stop()
       apphttp.stop()
 
 class WebApplicationHTTP(threading.Thread):
-   def __init__(self, alarmThread, Settingsthread, Media, Caller, brightnessthreadptr, tftptr):
-      global alarm, users, settings, media, MainLoop, brightnessthread, webcredential_path, iplist, tft
+   def __init__(self, alarmThread, Settingsthread, Media, Caller, brightnessthreadptr, tftptr, broker):
+      global alarm, users, settings, media, MainLoop, brightnessthread, webcredential_path, iplist, tft, mqttBroker
       threading.Thread.__init__(self)
       alarm = alarmThread
       brightnessthread = brightnessthreadptr
@@ -1568,6 +1660,7 @@ class WebApplicationHTTP(threading.Thread):
       media = Media
       MainLoop = Caller
       tft = tftptr
+      mqttBroker = broker
 
       #if os.path.isfile(webcredential_path):
       #    #~ log.debug("getting webcredentials")
@@ -1591,7 +1684,7 @@ class WebApplicationHTTP(threading.Thread):
 
    def run(self):
       #~ global session
-      log.debug("Starting up http web server")
+      log.debug("Starting HTTP web server")
 
       #home_dir = os.getcwd() #os.path.expanduser('~')
       home_dir = "/home/pi/piclock" #os.path.expanduser('~')
@@ -1616,11 +1709,11 @@ class WebApplicationHTTP(threading.Thread):
 
       #~ self.app.internalerror = web.debugerror
       web.httpserver.runsimple(apphttp.wsgifunc(), ("0.0.0.0", 80))
-      log.debug("Web server has stopped")
+      log.debug("HTTP Web server has stopped")
 
    def stop(self):
       #~ global users
-      log.debug("Shutting down http web server")
+      log.debug("Shutting down HTTP web server")
       #~ only do this when things have changed now
       #~ pickle.dump(users, open(webcredential_path, "wb" ) )
       apphttp.stop()

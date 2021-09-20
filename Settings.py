@@ -12,7 +12,7 @@ import logging
 # 03/11/2020 - Changed default volume and volumepercent to minimum
 # 20/04/2021 - SetVolumePercent nolonger converts its parameter to a percentage as it already should be one
 # 27/04/2021 - Got a better remap range to range routine
-# 08/05/2021 - Fixed minor syntax errors.
+# 08/05/2021 - Fixed minor syntax errors. Added mqtt broker
 
 log = logging.getLogger('root')
 
@@ -26,17 +26,17 @@ lock = threading.Lock()
 # http://www.listenlive.eu/bbcradio2.m3u
 # Ones From http://www.suppertime.co.uk/blogmywiki/2015/04/updated-list-of-bbc-network-radio-urls/
 # dont work :(
-STATIONS = [
-   {'name':'BBC Radio 1', 'url':'http://open.live.bbc.co.uk/mediaselector/5/select/version/2.0/mediaset/http-icy-mp3-a/vpid/bbc_radio_one/format/pls.pls'},
-   {'name':'BBC Radio 2', 'url':'http://open.live.bbc.co.uk/mediaselector/5/select/version/2.0/mediaset/http-icy-mp3-a/vpid/bbc_radio_two/format/pls.pls'},
-   {'name':'BBC Radio London', 'url':'http://www.radiofeeds.co.uk/bbclondon.pls'},
-   {'name':'Capital FM', 'url':'http://media-ice.musicradio.com/CapitalMP3.m3u'},
-   {'name':'Kerrang Radio', 'url':'http://tx.whatson.com/icecast.php?i=kerrang.mp3.m3u'},
-   {'name':'Magic 105.4', 'url':'http://tx.whatson.com/icecast.php?i=magic1054.aac.m3u'},
-   {'name':'Radio X', 'url':'http://media-ice.musicradio.com/RadioXUKMP3.m3u'},
-   {'name':'Smooth Radio', 'url':'http://media-ice.musicradio.com/SmoothLondonMP3.m3u'},
-   {'name':'XFM', 'url':'http://media-ice.musicradio.com/XFM.m3u'},
-]
+#STATIONS = [
+#   {'name':'BBC Radio 1', 'url':'http://open.live.bbc.co.uk/mediaselector/5/select/version/2.0/mediaset/http-icy-mp3-a/vpid/bbc_radio_one/format/pls.pls'},
+#   {'name':'BBC Radio 2', 'url':'http://open.live.bbc.co.uk/mediaselector/5/select/version/2.0/mediaset/http-icy-mp3-a/vpid/bbc_radio_two/format/pls.pls'},
+#   {'name':'BBC Radio London', 'url':'http://www.radiofeeds.co.uk/bbclondon.pls'},
+#   {'name':'Capital FM', 'url':'http://media-ice.musicradio.com/CapitalMP3.m3u'},
+#   {'name':'Kerrang Radio', 'url':'http://tx.whatson.com/icecast.php?i=kerrang.mp3.m3u'},
+#   {'name':'Magic 105.4', 'url':'http://tx.whatson.com/icecast.php?i=magic1054.aac.m3u'},
+#   {'name':'Radio X', 'url':'http://media-ice.musicradio.com/RadioXUKMP3.m3u'},
+#   {'name':'Smooth Radio', 'url':'http://media-ice.musicradio.com/SmoothLondonMP3.m3u'},
+#   {'name':'XFM', 'url':'http://media-ice.musicradio.com/XFM.m3u'},
+#]
 
 class Settings:
    # Database connection details
@@ -75,7 +75,7 @@ class Settings:
       ('brightness_timeout','20'), # Time (secs) after which we should revert to auto-brightness
       ('brightness_tweak','0'),    # Allow tweaking brightness (0-99, effectively -50 to 50)
       ('calendar','Calendar@google.local'), # Calendar to gather events from
-      ('clock_colour','255,0,0'),  # default clock colour
+      ('clock_colour','255,0,0'),  # default clock colour (Red default)
       ('clock_format','4'),        # 4 or 6 digit clock
       ('clock_font','dseg7modern'), # default font
       ('default_wake','0815'),     # Alarm time for Holidays
@@ -103,11 +103,120 @@ class Settings:
       ('DEBUGLEVEL','10'),         # default loglevel is debug
       ('minvolume','55'),          # Minimum allowed volume
       ('volumepercent','0'),     # Current volume as a percentage where 0% is minvolume
+      ('mqttbroker',''),           # mqqt broker. Blank for none required
+      ('mqttbrokeruser',''),       # mqqt broker username
+      ('mqttbrokerpass',''),       # mqqt broker password
+      ('station_count','8'),       # number of stations
+
+      ('station_name_0','BBC Radio 1'),
+      ('station_url_0','http://open.live.bbc.co.uk/mediaselector/5/select/version/2.0/mediaset/http-icy-mp3-a/vpid/bbc_radio_one/format/pls.pls'),
+      ('station_name_1','BBC Radio 2'),
+      ('station_url_1','http://open.live.bbc.co.uk/mediaselector/5/select/version/2.0/mediaset/http-icy-mp3-a/vpid/bbc_radio_two/format/pls.pls'),
+      ('station_name_2','BBC Radio London'),
+      ('station_url_2','http://www.radiofeeds.co.uk/bbclondon.pls'),
+      ('station_name_3','Capital FM'),
+      ('station_url_3','http://media-ice.musicradio.com/CapitalMP3.m3u'),
+      ('station_name_4','Kerrang Radio'),
+      ('station_url_4','http://tx.whatson.com/icecast.php?i=kerrang.mp3.m3u'),
+      ('station_name_5','Magic 105.4'),
+      ('station_url_5','http://tx.whatson.com/icecast.php?i=magic1054.aac.m3u'),
+      ('station_name_6','Radio X'),
+      ('station_url_6','http://media-ice.musicradio.com/RadioXUKMP3.m3u'),
+      ('station_name_7','Smooth Radio'),
+      ('station_url_7','http://media-ice.musicradio.com/SmoothLondonMP3.m3u'),
+      ('station_name_8','XFM'),
+      ('station_url_8','http://media-ice.musicradio.com/XFM.m3u')
    ]
 
    def __init__(self):
       self.conn = sqlite3.connect(self.DB_NAME, check_same_thread=False)
+      global StationList
       self.c = self.conn.cursor()
+      self.mqttbroker = None
+      #self.STATIONS = STATIONS
+      self.StationList = self.getStationList()
+      #for stationname in self.STATIONS:
+      #   self.StationList.append(stationname['name'])
+
+   def publish(self):
+      if (self.mqttbroker != None):
+         fullList = ""
+         for stationno in range(0,self.getInt('station_count')+1):
+            self.mqttbroker.publish("stations/station_name_" + str(stationno), self.get("station_name_" + str(stationno)))
+            self.mqttbroker.publish("stations/station_url_" + str(stationno), self.get("station_url_" + str(stationno)))
+            fullList = fullList + "," + self.get("station_name_" + str(stationno))
+         self.mqttbroker.publish("stations/station_list", fullList[1:]) 
+
+   def on_message(self, topic, payload):
+      try:
+         method = topic[0:topic.find("/")] # before first "/"
+         item = topic[topic.rfind("/")+1:]   # after last "/"
+         log.info("method='%s', item='%s'", method, item)
+         done = False
+         if (method == 'stations'):
+            if (item.find('station_name_') == 0) | (item.find('station_url_') == 0):
+               stationno = int(item[item.rfind("_")+1])
+               if (stationno < 0):
+                     stationno = 0
+               
+               if (stationno > self.getint('station_count')):
+                  stationno == self.getint('station_count')+1
+                  log.info("New station no %d", stationno)
+                  #self.set('station_count', str(stationno))
+                  #self.getorset(item,payload)
+               else:
+                  log.info("station no %d", stationno)
+                  #self.settings.set(item, payload)
+            done = True
+
+      except Exception as e:
+         log.debug("on_message Error: %s" , e)
+      
+      return False
+
+   def getStationInfo(self, stationno):
+      if (stationno >= 0) & (stationno <= self.getInt('station_count')):
+         log.debug("GetStationInfo %d", stationno)
+         return {'name':self.get('station_name_' + str(stationno)),
+                  'url':self.get('station_url_'+ str(stationno))}
+      else:
+         return None
+
+   def getStationName(self, stationno):
+      if (stationno >= 0) & (stationno <= self.getInt('station_count')):
+         return self.get('station_name_' + str(stationno))
+      else:
+         return ""
+
+   def getAllStationInfo(self):
+      AllStationList = []
+      for stationno in range(0,self.stationCount()+1):
+         AllStationList.append({'name':self.get('station_name_' + str(stationno)),
+                  'url':self.get('station_url_'+ str(stationno))})
+      return AllStationList
+
+   def stationCount(self):
+      return self.getInt('station_count')
+
+   def getStationList(self):
+      StationList = []
+      for stationno in range(0,self.stationCount()+1):
+         StationList.append(self.get('station_name_' + str(stationno)))
+      return StationList
+
+   def getStationNumberFromName(self, stationname):
+      foundno = -1
+      #log.info("convert name '%s'", stationname.upper())
+      for stationno in range(0,self.stationCount()+1):
+         #log.info(" StationName check " + self.get('station_name_' + str(stationno)).upper())
+         if (self.get('station_name_' + str(stationno)).upper() == stationname.upper()):
+            foundno = stationno
+            break
+
+      return foundno
+
+   def setmqttbroker(self, mqttbroker):
+      self.mqttbroker = mqttbroker
 
    def setup(self):
       # This method called once from alarmpi main class
@@ -167,8 +276,12 @@ class Settings:
    def getInt(self,key):
       try:
          return int(self.get(key))
-      except ValueError:
+      except: # did have ValueError
          log.warn("Could not fetch %s as integer, value was [%s], returning 0",key,self.get(key))
+         lock.acquire()
+         self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',("0",key,))
+         self.conn.commit()
+         lock.release()
          return 0
 
    def set(self,key,val):
@@ -185,12 +298,14 @@ class Settings:
           lock.release()
 
           if key=="volume": # minvolume% to 100%
-              newvol = self.volumeRangeToPercent(int(val))
+              newvolpercent = self.volumeRangeToPercent(int(val))
               self.setVolume(int(val))
               lock.acquire()
-              self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',('volumepercent',newvol))
+              self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',('volumepercent',newvolpercent))
               self.conn.commit()
               lock.release()
+              if self.mqttbroker != None:
+                 self.mqttbroker.publish("radio/volumepercent",str(newvolpercent))
 
           elif key=="volumepercent": # 0 to 100% (mapped as minvolume% to 100%)
               newvol = self.volumePercentToRange(int(val))
@@ -199,7 +314,21 @@ class Settings:
               self.c.execute('UPDATE '+self.TABLE_NAME+' SET value=? where name=?',('volume',newvol))
               self.conn.commit()
               lock.release()
+              if self.mqttbroker != None:
+                 self.mqttbroker.publish("radio/volumepercent",str(int(val)))
 
+          # if there's an MQTT broker publish daily Alarm info
+          elif self.mqttbroker != None:
+             if (key.find("alarm_station_") == 0):
+                dayno = key[-1]
+                self.mqttbroker.publish("alarms/%s/stationno" %(dayno), val)
+             elif (key.find("alarm_weekday_") == 0):
+                dayno = key[-1]
+                self.mqttbroker.publish("alarms/%s/time" %(dayno), val)
+             elif (key.find("alarm_volume_") == 0):
+                dayno = key[-1]
+                self.mqttbroker.publish("alarms/%s/volume" %(dayno), val)
+              
 
       except: # catch *all* exceptions
             e = sys.exc_info()[0]
@@ -209,7 +338,9 @@ class Settings:
    def setVolume(self,val): # 0 to 100% mapped -> minvolume% to 100%
       actualVolume = self.volumePercentToRange(val)
       subprocess.Popen("%s %s" % (self.VOL_CMD,actualVolume), stdout=subprocess.PIPE, shell=True)
-      log.info("Volume adjusted to %s, %s%%", val, actualVolume)
+      log.debug("Volume adjusted to %s, %s%%", val, actualVolume)
+      if self.mqttbroker != None:
+         self.mqttbroker.publish("radio/volumepercent",str(int(val)))
 
    # Convert percentage to usable range
    def volumePercentToRange(self,AlarmValue):
@@ -283,5 +414,21 @@ if __name__ == '__main__':
    #settings.getorset('minvolume','55')
    #settings.getorset('volumepercent',remap(settings.getInt("volume"),settings.getInt("minvolume"),100,0,100))
 
+   if False:
+      stationno = 0
+      for stationname in settings.STATIONS:
+         newname = settings.set("station_name_" + str(stationno),stationname['name'])
+         newurl = settings.getorset("station_url_" + str(stationno),stationname['url'])
+         newno = settings.getIntOrSet("station_count", str(stationno))
+         print ("%s %s=%s" % (str(newno), stationname['name'], stationname['url']))
+         stationno = stationno + 1
+   print ("")
+
    for s in settings.DEFAULTS:
       print ("%s = %s" % (s[0], settings.get(s[0])))
+
+
+#print (settings.getStationInfo(1))
+#print (settings.getStationInfo(3))
+#print (STATIONS[3])
+#print (settings.getStationInfo(3)['name'])

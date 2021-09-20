@@ -5,14 +5,18 @@
 #
 # Version 2.9
 # 26/01/2021 - Media player is now a thread and will montiroe itself (used to be in AlarmThread!)
+# 08/05/2021 - Added mqtt broker 
+# 12/07/2021 - Added stdout & stderror redirection. This removes the need for piclockweb.log
+#              Changed to piclockerror.log instead as only errors should end up there
 
 import logging
 import logging.handlers
 import sys
 import argparse
 import shutil
+#from http.server import BaseHTTPRequestHandler, HTTPServer
 from oauth2client import tools
-import pytz
+#import pytz
 import os
 import time
 import datetime
@@ -28,8 +32,8 @@ if userid != 0:
 
 # Decode arguments
 parser = argparse.ArgumentParser(parents=[tools.argparser])
-parser.add_argument('--log', help='log help')
-parser.add_argument('--nolancheck', action="store_true", help='nolancheck help')
+parser.add_argument('--log', help='Log Level', choices=["DEBUG","INFO","WARNING","ERROR","CRITICAL"])
+parser.add_argument('--nolancheck', action="store_true", help='Dont check for a network before starting')
 args = parser.parse_args()
 loglevel = args.log
 nolancheck = args.nolancheck
@@ -65,11 +69,32 @@ else: # Default output to caller
 
     log.addHandler(stream)
 
+# Added stdout & stderror redirection
+# From Solution 4 in https://stackoverflow.com/questions/19425736/how-to-redirect-stdout-and-stderr-to-logger-in-python/51612402
+class LoggerWriter:
+    def __init__(self, logfct):
+        self.logfct = logfct
+        self.buf = []
+
+    def write(self, msg):
+        if msg.endswith('\n'):
+            self.buf.append(msg[:-1])
+            self.logfct(''.join(self.buf))
+            self.buf = []
+        else:
+            self.buf.append(msg)
+
+    def flush(self):
+        pass
+#
+# To access the original stdout/stderr, use sys.__stdout__/sys.__stderr__
+sys.stdout = LoggerWriter(log.debug)
+sys.stderr = LoggerWriter(log.info)
 
 # Start support daemon
 pigpiostate = os.popen('ps -ef|grep pigpiod').read()
 if (pigpiostate.find("/usr/bin/pigpiod") == -1):
-    print "starting pigpio"
+    print ("starting pigpio")
     pid = Popen(["/usr/bin/pigpiod", "-l"]).pid
     time.sleep(3)
 
@@ -83,13 +108,14 @@ import Settings
 #~ import clockthread
 import tftthread
 import brightnessthread
-import MenuControl
 import MediaPlayer
 #import AlarmGatherer
 import AlarmThread
+#import WebServer    # doesnt work!
 from Web import WebApplication
 from Web import WebApplicationHTTP
 from Weather import WeatherFetcher
+import mqtt
 import subprocess
 
 import colours
@@ -169,7 +195,7 @@ class AlarmPi:
       if manual==0 or manual is None:
          self.alarm.autoSetAlarm()
       else:
-         alarmTime = datetime.datetime.fromtimestamp(manual, pytz.timezone('Europe/London'))
+         alarmTime = datetime.datetime.fromtimestamp(manual) # , pytz.timezone('Europe/London')
          log.info("Loaded previously set manual alarm time of %s",alarmTime)
          self.alarm.manualSetAlarm(alarmTime)
 
@@ -202,8 +228,14 @@ class AlarmPi:
       # Set Log level from settings
       log.setLevel(self.settings.getInt('DEBUGLEVEL'))
 
+      log.info("Starting mqtt application")
+      self.mqttbroker = mqtt.MQTTThread(self.settings)
+      self.mqttbroker.setDaemon(True)
+      self.mqttbroker.start()
+      self.settings.setmqttbroker(self.mqttbroker)
+
       log.info("Loading brightness control")
-      self.bright = brightnessthread.BrightnessThread(self.settings)
+      self.bright = brightnessthread.BrightnessThread(self.settings, self.mqttbroker)
       self.bright.setDaemon(True)
       # bright.registerControlObject(clock.segment.disp)
       # bright.registerControlObject(self.lcd)
@@ -217,22 +249,30 @@ class AlarmPi:
       weather = WeatherFetcher()
 
       log.info("Loading media")
-      media = MediaPlayer.MediaPlayer()
-      media.setDaemon(True)
-      media.start()
+      self.media = MediaPlayer.MediaPlayer(self.mqttbroker, self.settings)
+      self.media.setDaemon(True)
+      self.media.start()
 
       log.info("Loading alarm control")
-      self.alarm = AlarmThread.AlarmThread(weather, media, self.settings)
+      self.alarm = AlarmThread.AlarmThread(weather, self.media, self.settings, self.mqttbroker)
       self.alarm.setDaemon(True)
 
-
       log.info("Starting TFT")
-      #self.lcd = tftthread.TFTThread(alarm, self,  media, weather)
+      #self.lcd = tftthread.TFTThread(alarm, self,  self.media, weather)
       # tel lcd thread what we didnt know when we loaded it
-      self.lcd.SetConfig(self.alarm, media, weather, self.bright)
+      self.lcd.SetConfig(self.alarm, self.media, weather, self.bright, self.mqttbroker)
       #self.lcd.setDaemon(True)
       # and start lcdthread
       self.lcd.start()
+      
+      # new trial of webserver class
+      #self.webserver = WebServer.WebServer(self.mqttbroker, self.alarm, self.media, self.bright, self.lcd, self.settings)
+      # which failed
+
+      # Tell mqtt broker about things setup after it was
+      self.mqttbroker.set_radio(self.media)  
+      self.mqttbroker.set_alarm(self.alarm)  
+      self.mqttbroker.set_display(self.lcd) 
 
       #~ log.debug("Loading clock")
       #~ self.clock = clockthread.ClockThread(self.lcd, self.settings, self.alarm)
@@ -243,20 +283,22 @@ class AlarmPi:
 
       self.Menus = self.lcd.menu
 
-      #~ log.debug("Loading Menus")
-      #~ self.Menus = MenuControl.MenuControl(self.lcd, clock, media, self, weather)
-      #~ self.Menus.setDaemon(True)
+      #~ this is done in the tftthread where its required
 
       log.info("Starting alarm control")
       self.alarm.start()
 
+      # Start webserver thread
+      #self.webserver.setDaemon(True)
+      #self.webserver.start() # fails
+
       log.info("Starting HTTP web application")
-      webhttp = WebApplicationHTTP(self.alarm, self.settings, media, self, self.bright, self.lcd)
+      webhttp = WebApplicationHTTP(self.alarm, self.settings, self.media, self, self.bright, self.lcd, self.mqttbroker)
       webhttp.setDaemon(True)
       webhttp.start()
 
       log.info("Starting HTTPS web application")
-      web = WebApplication(self.alarm, self.settings, media, self, self.bright)
+      web = WebApplication(self.alarm, self.settings, self.media, self, self.bright, self.mqttbroker)
       web.setDaemon(True)
       web.start()
 
@@ -275,7 +317,7 @@ class AlarmPi:
          self.settings.set("quiet_reboot","1")
 
          while(self.stopping == False):
-            time.sleep(10) #0.1)
+            time.sleep(5) #0.1)
 
 
 
@@ -287,27 +329,28 @@ class AlarmPi:
 
       if self.rebootAction == 2: #self.shutdownnow == True:
         self.lcd.setMessage("Shutting Down",True)
-        media.playSpeech('Shutting down.')
+        self.media.playSpeech('Shutting down.')
         log.warn("Shutting down")
       elif self.rebootAction == 1: #self.rebootnow == True:
         self.lcd.setMessage("Rebooting now",True)
         # Lets do it quietly
-        #~ media.playSpeech('Rebooting now.')
+        #~ self.media.playSpeech('Rebooting now.')
         log.warn("Rebooting now")
       else:
         self.lcd.setMessage("Stopping now",True)
-        media.playSpeech('Stopping now.')
+        self.media.playSpeech('Stopping now.')
         log.warn("Stopping now")
 
       #~ time.sleep(1)
 
       log.info("Stopping all services")
+      #self.webserver.stop()
       web.stop()
       webhttp.stop()
-      # alarm.stop()
+      
       self.lcd.stop()
       self.bright.stop()
-      media.stopPlayer()
+      self.media.stopPlayer()
       if self.Menus.isActive():
           self.Menus.exitMenu()
 

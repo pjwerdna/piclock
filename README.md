@@ -10,8 +10,9 @@ Raspberry Pi Based Internet Radio Alarm clock with 3.5 inch touchscreen. Each da
 - 3.5 inch TFT touch screen
 - Web page for alarms and settings
 - api for use by the above webpage
-- fsapi for use by OpenHab
+- fsapi for use by OpenHab (or can use MQTT)
 - Uses Google calendar to indicate holidays when that days alarm goes of later (at a fixed time)
+- Optional MQTT server for radio and alarm control as well as station name and URL configuration
 
 # Hardware required
 
@@ -28,6 +29,7 @@ Raspberry Pi Based Internet Radio Alarm clock with 3.5 inch touchscreen. Each da
 
 # Install packages Etc
 
+- Python 2
 - mplayer2
 - mplayer.py
 - festival
@@ -65,7 +67,7 @@ Probably
 sudo apt-get install fonts-dseg
 ~~~
 
-## Python Librarys
+## Python 2 Librarys
 ~~~
 sudo apt-get install python-gflags python-httplib2
 sudo apt-get install python-dateutil
@@ -83,7 +85,7 @@ sudo pip install Adafruit_GPIO
 openssl req -new -x509 -keyout serverssl.key -out serverssl.crt -days 365 -nodes -extensions req_ext -config sslconfig.txt
 ~~~
 
-  Sample sslconfig.txt provided in the config directory.
+  Sample sslconfig.txt provided in the config directory. This certificate will have to be renewed every 365 days
 
 ## Calendar credentials
 
@@ -125,8 +127,10 @@ You should do this only when you're sure the clock is working correctly when you
 ```
 sudo ln -s /home/pi/piclock/piclock.sh /etc/init.d/piclock
 ```
-Logs go to /home/pi/piclock/piclock.log and /home/pi/piclock/piclockweb.log
+Logs go to /home/pi/piclock/piclock.log and as a last resort /home/pi/piclock/piclockerror.log
+Normally errors will go to the normal piclock.log as "INFO" due to the web server also logging connections to stderr
 
 ### FSAPI based on the following
 - https://github.com/openhab/openhab1-addons/wiki/Frontier-Silicon-Radio-Binding
 - https://github.com/flammy/fsapi
+- https://github.com/openhab/openhab/blob/master/bundles/binding/org.openhab.binding.frontiersiliconradio/src/main/java/org/openhab/binding/frontiersiliconradio/internal/FrontierSiliconRadio.java

@@ -1,7 +1,7 @@
 import gflags
 import httplib2
 import datetime
-import pytz
+#import pytz
 import dateutil.parser
 import logging
 import os
@@ -233,7 +233,7 @@ class AlarmGatherer:
       defaultHour = int(defaultTime[:2])
       defaultMin = int(defaultTime[2:])
 
-      alarm = datetime.datetime.now(pytz.timezone('Europe/London'))
+      alarm = datetime.datetime.now() # pytz.timezone('Europe/London')
       alarm += datetime.timedelta(days=1) # Move to tomorrow
       alarm = alarm.replace(hour=defaultHour,minute=defaultMin,second=0,microsecond=0)
 

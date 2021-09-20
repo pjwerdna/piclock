@@ -12,7 +12,10 @@ function PlayControl(comand, value, value2) {
 
     //~ window.alert(comand + " = " + value);
     var xmlhttp = new XMLHttpRequest();
-    var url = path + "/api?action=" + comand + "&value=" + value;
+    var url = path + "/api?action=" + comand
+    if (value != undefined) {
+        url = url + "&value=" + value
+    }
     if (value2 != undefined) {
         url = url + "&extravalue=" + value2
     }
@@ -35,7 +38,7 @@ function PlayControl(comand, value, value2) {
 
 function StatusUpdate(myarr) {
 
-    //~ window.alert(myarr.AlarmState)
+    //~ window.alert(myarr)
 
     document.getElementById("Volume").innerHTML = myarr.Volume+ "%";
     document.getElementById("Volumebar").style.height = myarr.Volume + "px";

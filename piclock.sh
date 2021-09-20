@@ -18,11 +18,11 @@ eval cd ~$FBUSER/piclock
 case "$1" in
  forcestart)
    echo "Starting piClock"
-   sudo python piclock.py --log=DEBUG --nolancheck > piclockweb.log 2>&1 &
+   sudo python piclock.py --log=DEBUG --nolancheck > piclockerror.log 2>&1 &
    ;;
  start)
    echo "Starting piClock"
-   sudo python piclock.py --log=DEBUG > piclockweb.log 2>&1 &
+   sudo python piclock.py --log=DEBUG > piclockerror.log 2>&1 &
    ;;
  stop)
    pkill --signal SIGINT -f "sudo python piclock.py"
@@ -33,7 +33,7 @@ restart)
    echo "piClock stopped"
    sleep 10
    echo "Starting piClock"
-   sudo python piclock.py --log=DEBUG > piclockweb.log 2>&1 &
+   sudo python piclock.py --log=DEBUG > piclockerror.log 2>&1 &
   ;;
  *)
    echo "Usage: /etc/init.d/piclock {start|stop|restart}"

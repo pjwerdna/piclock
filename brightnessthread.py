@@ -9,9 +9,10 @@ import math
 
 import pigpio
 
-# 31/03 - Tweaked brightness up at higher lumin levels
+# 31/03/???? - Tweaked brightness up at higher lumin levels
+# 20/09/2021 - Publish brightness in Lux to mqtt (piclock_out/display/lux)
 
-LogBrightenss = False
+LogBrightness = False
 
 log = logging.getLogger('root')
 
@@ -20,12 +21,14 @@ MAXLOOP_TIME = float(1)
 
 class BrightnessThread(threading.Thread):
 
-   def __init__(self,Settings):
+   def __init__(self,Settings, mqtt):
       threading.Thread.__init__(self)
       #self.controlObjects = []
       self.stopping = False
 
       self.sensor = TSL2561(debug=False,autogain=True)
+      #self.sensor.set_integration_time)1)
+      #self.sensor.set_gain(1)
       #~ self.sensor.set_gain(1)
 
       self.settings = Settings #.Settings()
@@ -46,6 +49,8 @@ class BrightnessThread(threading.Thread):
       self.pwmtftbrightness.set_PWM_frequency(18,2000) #400
       self.pwmtftbrightness.set_PWM_dutycycle(18,8)
       self.pwmscale = 4.2
+      self.lastreading = 0
+      self.mqtt = mqtt
 
       #~ log.debug('Frequency %d', self.pwmtftbrightness.get_PWM_frequency(18))
 
@@ -95,7 +100,7 @@ class BrightnessThread(threading.Thread):
             #~ if self.BrightnessTweak > 0:
                 TheTweak = self.BrightnessTweak
                 #~ TheTweak = math.log10(float(self.BrightnessTweak))*49.5
-                if LogBrightenss:
+                if LogBrightness:
                     log.info("log tweak = %f", (50-TheTweak))
                 #~ newpwm = int((self.currentLevel-(TheTweak/4))*4.0)
                 newpwm = int((self.currentLevel*self.pwmscale)+(50-TheTweak))
@@ -113,7 +118,7 @@ class BrightnessThread(threading.Thread):
         #~ log.info("duty cycle %d", self.pwmtftbrightness.get_PWM_dutycycle(18))
 
         #self.pwmtftbrightness.ChangeDutyCycle(self.currentLevel)
-        if LogBrightenss:
+        if LogBrightness:
             log.debug("pwm brightness %d", newpwm)
         #~ for obj in self.controlObjects:
         #~ obj.setBrightness(self.currentLevel)
@@ -132,10 +137,20 @@ class BrightnessThread(threading.Thread):
             continue
 
          #~ reading, IRreading = self.sensor._get_luminosity()
-         reading= self.sensor.lux()
+         try:
+            reading = self.sensor.lux()
+         except Exception as e:
+            log.debug("Brightness thread Error: %s" , e)    
+            reading = self.lastreading
+
          scaledreading = float(reading) /2.5 # (was 7.0)
-         if LogBrightenss:
-            log.debug("scaledreading=%f", scaledreading)
+         if LogBrightness and (self.lastreading != reading):
+            log.debug("lux,%f, scaledreading=%f", reading, scaledreading)
+
+         if self.mqtt != None:
+            if self.lastreading != reading:
+                self.mqtt.publish("display/lux",str(reading))
+         self.lastreading = reading
 
          #~ reading = float(100) # + self.BrightnessTweak)
 
@@ -162,7 +177,7 @@ class BrightnessThread(threading.Thread):
          #~ print "Reading: %s, Percentage: %s, NewLevel: %s, AvgLevel: %s, Diff: %s" % (reading,percentage,newLevel,avgLevel,levelDiff)
 
          if(levelDiff>=1):
-            if LogBrightenss:
+            if LogBrightness:
                 log.debug( "Reading: %s, Percentage: %s, NewLevel: %s, AvgLevel: %s, Diff: %s" % (reading,percentage,newLevel,avgLevel,levelDiff))
             #~ log.debug("lux %s", self.sensor._calculate_lux(reading, IRreading))
             #~ print "Updating brightness to %s" % (avgLevel)

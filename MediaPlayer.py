@@ -5,11 +5,13 @@
 
 # 18/10/220 - Added restartPlayer so AlarmThread can do easy restarts
 # 26/01/2021 - Moved player monitoring to player Thread
-# 08/05/2021 - Fixed minor syntax errors.
+# 08/05/2021 - Fixed minor syntax errors. Added mqtt broker
+# 10/08/2021 - Moved player monitoring to mediaplayer thread so it works when not playing an alarm 
+# 12/09/2021 - Only changes playing station if it a differant URL
 
 import time
 from mplayer import Player
-import Settings
+#import Settings
 import subprocess
 import logging
 import threading
@@ -30,9 +32,9 @@ FX_DIRECTORY = '/root/sounds/'
 
 class MediaPlayer(threading.Thread):
 
-   def __init__(self):
+   def __init__(self, mqttbroker, settings):
       threading.Thread.__init__(self)
-      self.settings = Settings.Settings()
+      self.settings = settings 
       self.player = False
       self.effect = False
       self.CurrentStation = ""
@@ -40,6 +42,7 @@ class MediaPlayer(threading.Thread):
       self.CurrentURL = ""
       self.stopping = False
       self.message = ""
+      self.mqttbroker = mqttbroker
 
    def playerActive(self):
       return self.player!=False
@@ -92,16 +95,31 @@ class MediaPlayer(threading.Thread):
       if station==-1:
          station = self.settings.getInt('station')
 
-      stationinfo = Settings.STATIONS[station]
+      try:
+         stationinfo = self.settings.getStationInfo(station)
+      except:
+         log.debug("invalid station no '%s'", str(station))
+         stationinfo = None
 
-      log.info("Playing station %s", stationinfo['name'])
-      log.debug("Playing URL %s", stationinfo['url'])
-      self.player = Player() # did have "-cache 2048"
-      self.player.loadlist(stationinfo['url'])
-      self.player.loop = 0
-      self.CurrentStation = stationinfo['name']
-      self.CurrentStationNo = station
-      self.CurrentURL = stationinfo['url']
+      if (stationinfo != None):
+         # Only change if its differant URL
+         if (self.CurrentURL != stationinfo['url']):
+            log.info("Playing station %s", stationinfo['name'])
+            log.debug("Playing URL %s", stationinfo['url'])
+            self.player = Player() # did have "-cache 2048"
+            self.player.loadlist(stationinfo['url'])
+            self.player.loop = 0
+            self.CurrentStation = stationinfo['name']
+            self.CurrentStationNo = station
+            self.CurrentURL = stationinfo['url']
+         else:
+            log.info("Already Playing %s", stationinfo['name'])
+
+         if (self.mqttbroker != None):
+            self.mqttbroker.publish("radio/station",self.CurrentStation)
+            self.mqttbroker.publish("radio/stationno",str(self.CurrentStationNo))
+            self.mqttbroker.publish("radio/state","ON")
+            self.mqttbroker.publish("radio/mute","OFF")
 
    def playStationURL(self,stationName, StationURL, StationNo = -1):
 
@@ -113,12 +131,25 @@ class MediaPlayer(threading.Thread):
       self.CurrentStation = stationName
       self.CurrentStationNo = StationNo
       self.CurrentURL = StationURL
+      if (self.mqttbroker != None):
+         self.mqttbroker.publish("radio/station",stationName)
+         self.mqttbroker.publish("radio/stationno",str(StationNo))
+         self.mqttbroker.publish("radio/state","ON")
+         self.mqttbroker.publish("radio/mute","OFF")
 
    def playMedia(self,file,loop=-1):
       log.info("Playing file %s", file)
       self.player = Player()
       self.player.loadfile(file)
       self.player.loop = loop
+      self.CurrentStation = file
+      self.CurrentStationNo = -1
+      self.CurrentURL = file
+      if (self.mqttbroker != None):
+         self.mqttbroker.publish("radio/station",file)
+         self.mqttbroker.publish("radio/stationno","-1")
+         self.mqttbroker.publish("radio/state","ON")      
+         self.mqttbroker.publish("radio/mute","OFF")
 
    # Play some speech. None-blocking equivalent of playSpeech, which also pays attention to sfx_enabled setting
    def playVoice(self,text):
@@ -152,12 +183,22 @@ class MediaPlayer(threading.Thread):
       if self.player:
          self.player.quit()
          self.player = False
+         self.CurrentURL = ""
+         self.CurrentStationNo = -1
          log.info("Player process terminated")
+         if (self.mqttbroker != None):
+            self.mqttbroker.publish("radio/station","N/A")
+            self.mqttbroker.publish("radio/stationno",str(-1))
+            self.mqttbroker.publish("radio/state","OFF")
+            self.mqttbroker.publish("radio/mute","OFF")
 
    def pausePlayer(self):
       if self.player:
          self.player.pause()
          log.info("Player process paused/unpaused")
+         if (self.mqttbroker != None):
+            self.mqttbroker.publish("radio/state","ON")
+            self.mqttbroker.publish("radio/mute","ON")
          return self.player.paused
       else:
          return True # not running actually!
@@ -168,12 +209,49 @@ class MediaPlayer(threading.Thread):
       time.sleep(2)
       self.playStationURL(self.CurrentStation, self.CurrentURL, self.CurrentStationNo)
 
+   def publish(self):
+        self.mqttbroker.publish("radio/volumepercent", self.settings.getInt("volumepercent"))
+        self.mqttbroker.publish("radio/station","N/A")
+        self.mqttbroker.publish("radio/stationno",str(-1))
+        self.mqttbroker.publish("radio/state","OFF")  
+
+   def on_message(self, topic ,payload):
+      method = topic[0:topic.find("/")] # before first "/"
+      item = topic[topic.rfind("/")+1:]   # after last "/"
+      log.debug("radio method='%s', item='%s'", method, item)
+      done = False
+      try:
+         if (method == "radio"):
+            if item == "state":
+               if (payload == "ON"):
+                  self.playStation(-1)
+               elif (payload == "OFF"):
+                  self.stopPlayer()
+               else:
+                  log.info("Invalid payload state '%s' [ON/OFF]", payload)
+
+            elif item == "stationno":
+               stationno = int(payload)
+               self.playStation(stationno)
+
+            elif (item == "volumepercent"):
+                self.settings.setVolume(int(payload))
+            done = True
+
+      except Exception as e:
+         log.debug("on_message Error: %s" , e)            
+      return done
+
    def run(self):
 
       self.SleepTime = float(0.1)
       lastplayerpos = 1 # media player position
       NoneCount = 0
       checkmessage = 50
+      lastmediatitle = ""
+
+      if (self.mqttbroker != None):
+         self.mqttbroker.publish("radio/state","OFF")
 
       log.info("Player thread started")
 
@@ -192,25 +270,51 @@ class MediaPlayer(threading.Thread):
                      currentplayerpos = self.player.stream_pos
                      if (currentplayerpos > lastplayerpos) and (currentplayerpos != None):
                            self.message = ", Radio Playing"
-                           #~ NoneCount = 0
+                           NoneCount = 0
                      elif (currentplayerpos == None) or (lastplayerpos == -1):
                            log.info("last %s, current pos %s",lastplayerpos, currentplayerpos) #, self.media.player.stream_length)
                            self.message = ", Radio Buffering"
-                           #~ if (lastplayerpos == 0) and (currentplayerpos == None):
-                               #~ NoneCount += 1
+                           if (lastplayerpos == 0) and (currentplayerpos == None):
+                               NoneCount += 1
                      else:
                            self.message = ", Radio Paused"
                            log.info("last %s, current pos %s ",lastplayerpos, currentplayerpos) #, self.media.player.stream_length)
+                           if self.playerPaused() == False:
+                              NoneCount += 1
 
                      lastplayerpos = currentplayerpos
+
+                     try:
+                        if lastmediatitle != self.player.media_title:
+                           log.info("media_title %s", self.player.media_title)
+                           lastmediatitle = self.player.media_title
+                     except:
+                        #log.info("no media title")
+                        lastmediatitle = ""
+
+                     try:
+                        metadata = self.player.metadata
+                        for item in metadata:
+                           log.info("metadata %s", item)
+                     except:
+                        metadata = ""
+                        #log.info("no metadata")
+                     try:
+                        log.info("metadata %s", self.player.metadata[0])
+                     except:
+                        metadata = ""
 
 
                   except Exception as e: # stream not valid I guess
                      log.error("Error: %s" , e)
                      self.message = ", Radio Erroring"
-                     #~ NoneCount += 1
+                     NoneCount += 1
                      #~ lastplayerpos = currentplayerpos
 
+                  if (NoneCount > 20): # or (currentplayerpos == None):
+                        log.info("Player may be stuck, restarting")
+                        NoneCount = 0
+                        self.restartPlayer()
                   #try:
                   #   metadata = self.player.metadata or {}
                   #   log.info("Track %s", metadata.get('track', ''))
@@ -233,7 +337,7 @@ class MediaPlayer(threading.Thread):
 
 if __name__ == '__main__':
     print ("Showing all current settings")
-    media = MediaPlayer()
+    media = MediaPlayer(None)
     print ("Playing file %s", PANIC_ALARM)
     player = Player("-cache 1024")
     player.loadfile(PANIC_ALARM)
