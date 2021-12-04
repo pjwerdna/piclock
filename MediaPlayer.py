@@ -8,6 +8,9 @@
 # 08/05/2021 - Fixed minor syntax errors. Added mqtt broker
 # 10/08/2021 - Moved player monitoring to mediaplayer thread so it works when not playing an alarm 
 # 12/09/2021 - Only changes playing station if it a differant URL
+# 22/11/2021 - Fixed alarm restart when player sticks
+# 23/11/2021 - Move Volume increase for alarms to MediaPlayer.py
+# 26/11/2021 - Fixed restart of player re triggering the current alarm
 
 import time
 from mplayer import Player
@@ -43,9 +46,13 @@ class MediaPlayer(threading.Thread):
       self.stopping = False
       self.message = ""
       self.mqttbroker = mqttbroker
+      self.increasingvolume = -1
+      self.alarmThread = None
+      self.playerrestarting = False
 
    def playerActive(self):
-      return self.player!=False
+      # True if playing or mid restart
+      return self.player!=False or self.playerrestarting
 
    def playerPaused(self):
       if self.player:
@@ -65,8 +72,14 @@ class MediaPlayer(threading.Thread):
       else:
           return -1
 
-   def soundAlarm(self, alarmThread, Station = -1):
+   def soundAlarm(self, alarmThread, Station = -1, StartVolume = -1):
+      # STation = Station Number
+      # StartVolume = Increasing volume from this level
       log.info("Playing alarm")
+      self.alarmThread = alarmThread
+      self.increasingvolume = StartVolume
+      if (StartVolume != -1):
+         self.settings.setVolume(StartVolume)
       self.playStation(Station)
       log.debug("Alarm process opened")
 
@@ -90,6 +103,7 @@ class MediaPlayer(threading.Thread):
          self.stopPlayer()
          time.sleep(2)
          self.playMedia(PANIC_ALARM,0)
+
 
    def playStation(self,station=-1):
       if station==-1:
@@ -132,7 +146,7 @@ class MediaPlayer(threading.Thread):
       self.CurrentStationNo = StationNo
       self.CurrentURL = StationURL
       if (self.mqttbroker != None):
-         self.mqttbroker.publish("radio/station",stationName)
+         self.mqttbroker.publish("radio/station",self.CurrentStation)
          self.mqttbroker.publish("radio/stationno",str(StationNo))
          self.mqttbroker.publish("radio/state","ON")
          self.mqttbroker.publish("radio/mute","OFF")
@@ -146,8 +160,8 @@ class MediaPlayer(threading.Thread):
       self.CurrentStationNo = -1
       self.CurrentURL = file
       if (self.mqttbroker != None):
-         self.mqttbroker.publish("radio/station",file)
-         self.mqttbroker.publish("radio/stationno","-1")
+         self.mqttbroker.publish("radio/station",self.CurrentStation)
+         self.mqttbroker.publish("radio/stationno",str(self.CurrentStationNo))
          self.mqttbroker.publish("radio/state","ON")      
          self.mqttbroker.publish("radio/mute","OFF")
 
@@ -185,10 +199,11 @@ class MediaPlayer(threading.Thread):
          self.player = False
          self.CurrentURL = ""
          self.CurrentStationNo = -1
+         self.CurrentStation = "N/A"
          log.info("Player process terminated")
          if (self.mqttbroker != None):
-            self.mqttbroker.publish("radio/station","N/A")
-            self.mqttbroker.publish("radio/stationno",str(-1))
+            self.mqttbroker.publish("radio/station",self.CurrentStation)
+            self.mqttbroker.publish("radio/stationno",str(self.CurrentStationNo))
             self.mqttbroker.publish("radio/state","OFF")
             self.mqttbroker.publish("radio/mute","OFF")
 
@@ -204,16 +219,24 @@ class MediaPlayer(threading.Thread):
          return True # not running actually!
 
    def restartPlayer(self):
+      self.playerrestarting = True
+      CurrentURL = self.CurrentURL
+      CurrentStation = self.CurrentStation
+      CurrentStationNo = self.CurrentStationNo
       log.info("Player Restarting")
       self.stopPlayer()
       time.sleep(2)
-      self.playStationURL(self.CurrentStation, self.CurrentURL, self.CurrentStationNo)
+      self.playerrestarting = False
+      self.playStationURL(CurrentStation, CurrentURL, CurrentStationNo)
 
    def publish(self):
         self.mqttbroker.publish("radio/volumepercent", self.settings.getInt("volumepercent"))
-        self.mqttbroker.publish("radio/station","N/A")
-        self.mqttbroker.publish("radio/stationno",str(-1))
-        self.mqttbroker.publish("radio/state","OFF")  
+        self.mqttbroker.publish("radio/station",self.CurrentStation)
+        self.mqttbroker.publish("radio/stationno",str(self.CurrentStationNo))
+        if self.player:
+            self.mqttbroker.publish("radio/state","ON")  
+        else:
+            self.mqttbroker.publish("radio/state","OFF")  
 
    def on_message(self, topic ,payload):
       method = topic[0:topic.find("/")] # before first "/"
@@ -223,20 +246,28 @@ class MediaPlayer(threading.Thread):
       try:
          if (method == "radio"):
             if item == "state":
-               if (payload == "ON"):
+               if (payload.upper() == "ON"):
                   self.playStation(-1)
-               elif (payload == "OFF"):
+               elif (payload.upper() == "OFF"):
                   self.stopPlayer()
                else:
                   log.info("Invalid payload state '%s' [ON/OFF]", payload)
+               done = True
 
             elif item == "stationno":
-               stationno = int(payload)
-               self.playStation(stationno)
+               try:
+                  stationno = int(payload)
+                  self.playStation(stationno)
+               except ValueError:
+                  log.warn("Could not decode %s as station no", payload)                        
+               done = True
 
             elif (item == "volumepercent"):
-                self.settings.setVolume(int(payload))
-            done = True
+               try:
+                  self.settings.setVolume(int(payload))
+               except ValueError:
+                  log.warn("Could not decode %s as volume percent", payload)    
+               done = True
 
       except Exception as e:
          log.debug("on_message Error: %s" , e)            
@@ -251,7 +282,8 @@ class MediaPlayer(threading.Thread):
       lastmediatitle = ""
 
       if (self.mqttbroker != None):
-         self.mqttbroker.publish("radio/state","OFF")
+         self.mqttbroker.set_radio(self) 
+         self.publish()
 
       log.info("Player thread started")
 
@@ -285,9 +317,9 @@ class MediaPlayer(threading.Thread):
                      lastplayerpos = currentplayerpos
 
                      try:
-                        if lastmediatitle != self.player.media_title:
-                           log.info("media_title %s", self.player.media_title)
-                           lastmediatitle = self.player.media_title
+                        if lastmediatitle != (self.player.media_title):
+                           log.info('media_title "%s" was "%s"', self.player.media_title, lastmediatitle)
+                           lastmediatitle = str(self.player.media_title)
                      except:
                         #log.info("no media title")
                         lastmediatitle = ""
@@ -297,8 +329,8 @@ class MediaPlayer(threading.Thread):
                         for item in metadata:
                            log.info("metadata %s", item)
                      except:
+                        #log.debug("no metadata, %s", metadata)
                         metadata = ""
-                        #log.info("no metadata")
                      try:
                         log.info("metadata %s", self.player.metadata[0])
                      except:
@@ -315,6 +347,21 @@ class MediaPlayer(threading.Thread):
                         log.info("Player may be stuck, restarting")
                         NoneCount = 0
                         self.restartPlayer()
+
+                  # DO we need to increase the volume?
+                  if (self.increasingvolume != -1):
+
+                     # if we have something to play increase volume
+                     if currentplayerpos != None:
+                           self.increasingvolume += 2
+                           if self.increasingvolume >= self.alarmThread.alarmVolume: #settings.getInt('volume'):
+                              #self.settings.setVolume(self.settings.getInt('volume'))
+                              self.settings.setVolume(self.alarmThread.alarmVolume)
+                              self.increasingvolume = -1 # At required volume
+                              log.info("Reached alarm volume level")
+                           else:
+                              self.settings.setVolume(self.increasingvolume)
+
                   #try:
                   #   metadata = self.player.metadata or {}
                   #   log.info("Track %s", metadata.get('track', ''))

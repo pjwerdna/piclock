@@ -14,6 +14,7 @@
 # 26/05/2021 - Volume slider is now changing volumepercent i.e. usable volume
 # 30/05/2021 - Only try for weather if its been setup
 # 11/09/2021 - Added mqtt input & output of display colour
+# 23/11/2021 - Fixed colour output on mqtt on startup
 
 #from LCDControl.LCDControl import LCDControl
 #import gaugette.rotary_encoder
@@ -185,7 +186,23 @@ class TFTThread(threading.Thread):
             colourR, colourG, colourB = self.settings.getcolour('clock_colour')
             self.mqttbroker.publish("display/colourRGB", str(colourR)+","+str(colourG)+","+str(colourB))
             self.mqttbroker.publish("display/colorRGB", str(colourR)+","+str(colourG)+","+str(colourB))
-        
+
+   def publish(self):
+        self.publishtext() #mqttbroker.publish("radio/text", self.ExtraMessage)      
+        self.publishname() #mqttbroker.publish("radio/name", self.message + " ")
+        self.publishcolour()
+
+   def publishcolour(self):
+        colourR, colourG, colourB = self.settings.getcolour('clock_colour')
+        self.mqttbroker.publish("display/colourRGB", str(colourR)+","+str(colourG)+","+str(colourB))
+        self.mqttbroker.publish("display/colorRGB", str(colourR)+","+str(colourG)+","+str(colourB))
+
+   def publishtext(self):
+        self.mqttbroker.publish("radio/text", self.ExtraMessage) 
+
+   def publishname(self):
+       self.mqttbroker.publish("radio/name", self.message + " ")
+
    def on_message(self, topic ,payload):
       method = topic[0:topic.find("/")] # before first "/"
       item = topic[topic.rfind("/")+1:]   # after last "/"
@@ -193,7 +210,7 @@ class TFTThread(threading.Thread):
       done = False
       try:
          if (method == "display"):
-            if (item == "colourRGB") or (item == "colorRGB"):
+            if (item == "colourrgb") or (item == "colorrgb"):
                 log.debug("colour = '%s'", payload)
                 #RGBcolour = payload.split(",")
                 try:
@@ -202,7 +219,7 @@ class TFTThread(threading.Thread):
                     #self.ClockColour = self.settings.getcolour('clock_colour')
                 except ValueError:
                     log.warn("Could not decode %s as colour", payload)
-            done = True
+                done = True
 
       except Exception as e:
          log.debug("on_message Error: %s" , e)
@@ -247,14 +264,14 @@ class TFTThread(threading.Thread):
         if (CheckInterval != -1) :
             self.checkmessage = CheckInterval
         if (self.mqttbroker != None):
-            self.mqttbroker.publish("radio/text", self.ExtraMessage)
+            self.publishtext()
 
    def AddToExtraMessage(self,NewMessage, CheckInterval = -1):
         self.ExtraMessage += NewMessage
         if (CheckInterval != -1) :
             self.checkmessage = CheckInterval
         if (self.mqttbroker != None):
-            self.mqttbroker.publish("radio/text", self.ExtraMessage)
+            self.publishtext()
 
    def SetConfig(self, alarmThread, media, weather, brightnessthreadptr, mqttbroker):  #Remaining info to allow startup
       self.alarmThread = alarmThread
@@ -265,11 +282,6 @@ class TFTThread(threading.Thread):
       self.menu = MenuControl.MenuControl(self, self.media, self.weather, self.caller, self.brightness)
       #self.menu.setDaemon(True)
       self.mqttbroker = mqttbroker
-      if (self.mqttbroker != None):
-          self.mqttbroker.publish("radio/text", self.ExtraMessage)      
-          self.mqttbroker.publish("radio/name", self.message + " ")
-          self.mqttbroker.publish("display/colourRGB", str(self.settings.getcolour('clock_colour')))
-          self.mqttbroker.publish("display/colorRGB", str(self.settings.getcolour('clock_colour')))
 
    def ChooseFonts(self):
       if (self.settings.getorset('menu_font','') == ""):
@@ -391,7 +403,7 @@ class TFTThread(threading.Thread):
      if newMessage != self.message:
         self.message = newMessage
         if (self.mqttbroker != None):
-            self.mqttbroker.publish("radio/name", self.message + " ")
+            self.publishname()
 
      area = self.tftScreen.fill((0,0,0))
      text_surface = self.font_normal.render(newMessage, True, colour)
@@ -1509,6 +1521,9 @@ class TFTThread(threading.Thread):
       colourR, colourG, colourB = self.settings.getcolour('clock_colour')
       self.SetClockColour(str(colourR)+","+str(colourG)+","+str(colourB))
 
+      if self.mqttbroker != None:
+        self.mqttbroker.set_display(self)
+        self.publish()
       #~ self.settings.set("quiet_reboot","0")
 
       while(not self.stopping):
@@ -1522,6 +1537,10 @@ class TFTThread(threading.Thread):
 
             if (self.pausedState == False ) and ((second != lastsecond) or (quickpoll == True)):
                 
+                # Republish to mqtt ever hour
+                if ((now.minute == 0) and (now.second < 2)): # might do this twice but never mind
+                    self.publish()
+
                 if (self.lcd.ClockFontName == None):
 
                     hour = now.hour

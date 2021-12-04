@@ -192,7 +192,7 @@ class AlarmGatherer:
         return events[0]
 
    def getNextEventTime(self, includeToday=False):
-      log.debug("Fetching next event time (including today=%s)" % (includeToday))
+      log.info("Fetching next event time (including today=%s)" % (includeToday))
       nextEvent = self.getNextEvent(today=includeToday)
       #start = dateutil.parser.parse(nextEvent['start']['dateTime'])
       start = dateutil.parser.parse(nextEvent['start'].get('dateTime', nextEvent['start'].get('date')))
@@ -213,7 +213,7 @@ class AlarmGatherer:
       return None
 
    def getNextEventDetails(self, includeToday=False):
-      log.debug("Fetching next event time (including today=%s)" % (includeToday))
+      log.info("Fetching next event time (including today=%s)" % (includeToday))
       nextEvent = self.getNextEvent(today=includeToday)
       return nextEvent
 

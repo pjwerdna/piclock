@@ -35,3 +35,6 @@
 # 11/09/2021 - Added mqtt input & output of display colour (tftthread.py)
 # 12/09/2021 - Only changes playing station if it a differant URL (MediaPlayer.py)
 # 20/09/2021 - Publish brightness in Lux to mqtt (piclock_out/display/lux) (brightnessthread.py)
+# 22/11/2021 - Fixed alarm restart when player sticks (MediaPlayer.py)
+# 23/11/2021 - Move Volume increase for alarms to MediaPlayer.py (MediaPlayer.py, AlarmThread.py)
+# 26/11/2021 - Fixed restart of player re triggering the current alarm (MediaPlayer.py)

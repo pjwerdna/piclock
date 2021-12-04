@@ -125,7 +125,9 @@ class Settings:
       ('station_name_7','Smooth Radio'),
       ('station_url_7','http://media-ice.musicradio.com/SmoothLondonMP3.m3u'),
       ('station_name_8','XFM'),
-      ('station_url_8','http://media-ice.musicradio.com/XFM.m3u')
+      ('station_url_8','http://media-ice.musicradio.com/XFM.m3u'),
+      ('display_minLux','200'),
+      ('display_maxLux','0')
    ]
 
    def __init__(self):
@@ -287,6 +289,7 @@ class Settings:
    def set(self,key,val):
       self.get(key) # So we know if it doesn't exist
 
+      #log.info("setting '%s' to '%s'", key, val)
       try:
           if key=="volume":
               if (int(val)<self.getInt("minvolume")):

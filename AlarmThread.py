@@ -25,6 +25,7 @@ import urllib2
 # 26/01/2021 - Moved player monitoring to player Thread
 # 08/05/2021 - Fixed minor syntax errors.
 # 10/08/2021 - Moved player monitoring to mediaplayer thread so it works when not playing an alarm 
+# 23/11/2021 - Move Volume increase for alarms to MediaPlayer.py
 
 log = logging.getLogger('root')
 
@@ -105,10 +106,12 @@ class AlarmThread(threading.Thread):
    def soundAlarm(self):
       log.info("Alarm triggered")
       if (self.settings.getInt('gradual_volume') == 1):
-          # Should do this when actually outputting sound really!
-          self.settings.setVolume(30)
-          self.increasingvolume = 40 # anything lower is inaudiable
-      self.media.soundAlarm(self, self.nextAlarmStation)
+         # Should do this when actually outputting sound really!
+         #self.settings.setVolume(30)
+         #self.increasingvolume = 40 # anything lower is inaudiable
+         self.media.soundAlarm(self, self.nextAlarmStation, 30)
+      else:
+         self.media.soundAlarm(self, self.nextAlarmStation)
       timeout = datetime.datetime.now() #pytz.timezone('Europe/London'))
       timeout += datetime.timedelta(minutes=self.settings.getInt('alarm_timeout'))
       self.alarmTimeout = timeout
@@ -476,82 +479,80 @@ class AlarmThread(threading.Thread):
       currentplayerpos = 0
       lastalarmremaining = 0
 
-      while(not self.stopping):
-          now = datetime.datetime.now() #pytz.timezone('Europe/London'))
+      if (self.mqttbroker != None):
+         self.mqttbroker.set_alarm(self)  
 
-          #~ if(self.nextAlarm is not None and self.fromEvent and self.alarmInSeconds() < 3600 and not self.travelCalculated):
+      while(not self.stopping):
+         now = datetime.datetime.now() #pytz.timezone('Europe/London'))
+
+         #~ if(self.nextAlarm is not None and self.fromEvent and self.alarmInSeconds() < 3600 and not self.travelCalculated):
              #~ # We're inside 1hr of an event alarm being triggered, and we've not taken into account the current traffic situation
              #~ self.travelAdjustAlarm()
 
-          if(self.nextAlarm is not None and self.nextAlarm < now and not self.media.playerActive()):
-                diff = now - LastTime
-                # if the time hasnt changed much since the last check sound the alarm
-                # If it has changed then the clock was probably set.
-                if diff <= datetime.timedelta(minutes=30):
-                    self.soundAlarm()
+         if(self.nextAlarm is not None and self.nextAlarm < now and not self.media.playerActive()):
+            diff = now - LastTime
+            # if the time hasnt changed much since the last check sound the alarm
+            # If it has changed then the clock was probably set.
+            if diff <= datetime.timedelta(minutes=30):
+               self.soundAlarm()
+               self.nextAlarm = None
 
-          if(self.alarmTimeout is not None):
-             alarmremaining = int((self.alarmTimeout - now).total_seconds()/60.0)
-             if (alarmremaining != lastalarmremaining) :
+         if(self.alarmTimeout is not None):
+            alarmremaining = int((self.alarmTimeout - now).total_seconds()/60.0)
+            if (alarmremaining != lastalarmremaining) :
                self.mqttbroker.publish("alarm/remaining",str(alarmremaining))
                lastalarmremaining = alarmremaining
-             if (self.alarmTimeout < now):
+            if (self.alarmTimeout < now):
                log.info("Alarm timeout reached, stopping alarm")
                self.stopAlarm()
 
-          # Get what we have to play (if anything)
+         # Get what we have to play (if anything)
 
-          #if self.media.playerActive() and (self.nextAlarm is not None):
-          if self.media.playerActive() and (self.alarmTimeout is not None):
-                self.message = ", Wakey Wakey!"
+         #if self.media.playerActive() and (self.nextAlarm is not None):
+         if self.media.playerActive() and (self.alarmTimeout is not None):
+            self.message = ", Wakey Wakey!"
 
-                try:
-                    currentplayerpos = self.media.player.stream_pos
+            try:
+               currentplayerpos = self.media.player.stream_pos
 
-                    # Check if Player stuck or disconnected
-                    #if (currentplayerpos == None) or (currentplayerpos == lastPlayerPos):
-                    #    NoneCount += 1
-                    #    log.debug("nonecount=%d", NoneCount)
-                    #    #log.info("currentplayerpos=%d", currentplayerpos)
-                    #    if (NoneCount > 20): # or (currentplayerpos == None):
-                    #        log.info("Player may be stuck, restarting")
-                    #        #~ self.snoozefor()
-                    #        #self.silenceAlarm()
+               # Check if Player stuck or disconnected
+               #if (currentplayerpos == None) or (currentplayerpos == lastPlayerPos):
+               #    NoneCount += 1
+               #    log.debug("nonecount=%d", NoneCount)
+               #    #log.info("currentplayerpos=%d", currentplayerpos)
+               #    if (NoneCount > 20): # or (currentplayerpos == None):
+               #        log.info("Player may be stuck, restarting")
+               #        #~ self.snoozefor()
+               #        #self.silenceAlarm()
 
-                    #        #time.sleep(5)
+               #        #time.sleep(5)
 
-                    #        #~ self.media.soundAlarm(self, self.nextAlarmStation)
-                    #        # self.media.playStationURL(self.media.CurrentStation, self.media.CurrentURL, self.media.CurrentStationNo)
-                    #        self.media.restartPlayer()
-                    #        NoneCount = 0
-                    #else:
-                    #    NoneCount = 0
+               #        #~ self.media.soundAlarm(self, self.nextAlarmStation)
+               #        # self.media.playStationURL(self.media.CurrentStation, self.media.CurrentURL, self.media.CurrentStationNo)
+               #        self.media.restartPlayer()
+               #        NoneCount = 0
+               #else:
+               #    NoneCount = 0
 
-                except Exception as e:
-                    log.exception("Error: %s" , e)
-                    currentplayerpos = None
+            except Exception as e:
+               log.exception("Error: %s" , e)
+               currentplayerpos = None
 
-                lastPlayerPos = currentplayerpos
-          else:
-                currentplayerpos = None
-                self.message = ""
+            lastPlayerPos = currentplayerpos
+         else:
+            # Stopped playing but still waiting for alarm to end
+            if (self.media.playerActive() == False) and (self.alarmTimeout is not None):
+               alarmremaining = 0
+               self.mqttbroker.publish("alarm/remaining",str(alarmremaining))
+               lastalarmremaining = alarmremaining
+               self.stopAlarm()
+            else:
+               currentplayerpos = None
+               self.message = ""
 
-          # DO we need to increase the volume?
-          if (self.increasingvolume != -1):
-
-              # if we have something to play increase volume
-              if currentplayerpos != None:
-                  self.increasingvolume += 2
-                  if self.increasingvolume >= self.alarmVolume: #settings.getInt('volume'):
-                      #self.settings.setVolume(self.settings.getInt('volume'))
-                      self.settings.setVolume(self.alarmVolume)
-                      self.increasingvolume = -1 # At required volume
-                      log.info("Reached alarm volume level")
-                  else:
-                      self.settings.setVolume(self.increasingvolume)
-
-          if (self.alarmGatherer.getNextEventTimeout == None) or (self.alarmGatherer.eventCache == None) or (LastTime > self.alarmGatherer.getNextEventTimeout):
+         if (self.alarmGatherer.getNextEventTimeout == None) or (self.alarmGatherer.eventCache == None) or (LastTime > self.alarmGatherer.getNextEventTimeout):
             nexteventInfo = self.alarmGatherer.getNextEventDetails()
+            self.autoSetAlarm(True)
 
-          LastTime = now
-          time.sleep(SleepTime)
+         LastTime = now
+         time.sleep(SleepTime)

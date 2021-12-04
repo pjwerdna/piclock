@@ -199,6 +199,12 @@ class MenuControl(threading.Thread):
        self.lcd.setMessage("",False, colour = (0,0,0))
        return ""
 
+
+# menu_ConfirmExit = ["Exit Clock", "Exit & Restart Clock", "Reboot Clock", "Shutdown Clock", "Cancel" ]
+#menu_volume = "Volume", [ "Volume Up", "Volume Down" ]
+#menusettings = "Settings",["Volume", "Alarm Settings", "Display Settings", "Holiday Mode"]
+#menu_display = "Display Settings",["Menu Timeout", "Show Weather", "Dim Screen", "Clock Display"]
+
    def MenuSelection(self,SelectedItem, Title):
 
         if (SelectedItem == "Back"):
@@ -276,13 +282,20 @@ class MenuControl(threading.Thread):
             menu_display.append("SSID    : " + ssid)
             if self.media.player:
                 try:
-                        menu_display.append("Title   : " + self.media.player.metadata['title'])
+                    metadata = self.media.player.metadata
+                except Exception as e :
+                        log.debug("metadata error %s", e)    
+                try:
+                        menu_display.append("Title   : " + metadata.get('title',''))
                 except Exception as e :
                         menu_display.append("Title   : ?")
+                        log.debug("metadata title error %s", e)   
                 try:
-                    menu_display.append("Artist  : " + self.media.player.metadata['artist'])
+                    menu_display.append("Artist  : " + metadata.get('artist',')'))
                 except Exception as e :
                     menu_display.append("Artist  : ?")
+                    log.debug("metadata artist error %s", e)   
+
                 log.debug(self.media.player.metadata)
                 try:
                     log.info("current = %d", self.media.player.stream_pos)

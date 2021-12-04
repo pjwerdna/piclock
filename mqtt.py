@@ -61,27 +61,39 @@ class MQTTThread(threading.Thread):
     #    if msg.topic.find("/255/") == -1:
         log.debug("mqtt " + msg.topic + " = " + msg.payload)
         if str(msg.topic)[0:11] == "piclock_in/":
-            insetting = str(msg.topic)[11:]
-            log.info("topic='%s', payload='%s'", insetting, msg.payload)
+            insetting = str(msg.topic)[11:].lower()
+            payload = msg.payload.lower()
+            log.info("topic='%s', payload='%s'", insetting, payload)
 
             done = False
             if (self.radio != None):
-                done = self.radio.on_message(insetting,msg.payload)
+                done = self.radio.on_message(insetting,payload)
             if (self.alarm != None) and (done == False):
-                done = self.alarm.on_message(insetting,msg.payload)
+                done = self.alarm.on_message(insetting,payload)
             if (self.settings != None) and (done == False):
-                done = self.settings.on_message(insetting,msg.payload)
+                done = self.settings.on_message(insetting,payload)
             if (self.display != None) and (done == False):
-                done = self.display.on_message(insetting,msg.payload)
+                done = self.display.on_message(insetting,payload)
+            if (self.brightness != None) and (done == False):
+                done = self.brightness.on_message(insetting,payload)
+            if (done == False):
+                log.debug("No takers!")
 
     def set_radio(self,newradio):
         self.radio = newradio
+        # self.radio.publish()
 
     def set_alarm(self,newalarm):
         self.alarm = newalarm
+        self.alarm.publish()
 
     def set_display(self,display):
         self.display = display
+        #self.display.publish()
+
+    def set_Brightness(self,brightnessptr):
+        self.brightness = brightnessptr
+        self.brightness.publish()
 
     def __init__(self,settings):
         threading.Thread.__init__(self)
@@ -93,6 +105,7 @@ class MQTTThread(threading.Thread):
         self.radio = None
         self.alarm = None
         self.display = None
+        self.brightness = None
 
         self.mqttbroker = self.settings.getorset("mqttbroker","")
         if (self.mqttbroker != ""):
@@ -116,12 +129,6 @@ class MQTTThread(threading.Thread):
 
 
     def run(self):
-        if (self.radio != None):
-            self.radio.publish()
-
-        # publish daily Alarm info
-        if (self.alarm != None):
-            self.alarm.publish()
 
         if (self.settings != None):
             self.settings.publish()

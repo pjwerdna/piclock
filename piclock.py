@@ -8,6 +8,7 @@
 # 08/05/2021 - Added mqtt broker 
 # 12/07/2021 - Added stdout & stderror redirection. This removes the need for piclockweb.log
 #              Changed to piclockerror.log instead as only errors should end up there
+# 07/10/2021 - fixed mqtt calls
 
 import logging
 import logging.handlers
@@ -270,16 +271,9 @@ class AlarmPi:
       # which failed
 
       # Tell mqtt broker about things setup after it was
-      self.mqttbroker.set_radio(self.media)  
-      self.mqttbroker.set_alarm(self.alarm)  
-      self.mqttbroker.set_display(self.lcd) 
-
-      #~ log.debug("Loading clock")
-      #~ self.clock = clockthread.ClockThread(self.lcd, self.settings, self.alarm)
-      #~ self.clock.setDaemon(True)
-
-      #~ log.debug("Starting clock")
-      #~ self.clock.start()
+      #self.mqttbroker.set_radio(self.media)  
+      #self.mqttbroker.set_alarm(self.alarm)  
+      #self.mqttbroker.set_display(self.lcd) 
 
       self.Menus = self.lcd.menu
 
@@ -315,10 +309,14 @@ class AlarmPi:
 
          # If we crash or have power loss restart quietly
          self.settings.set("quiet_reboot","1")
+         lastclocktemp = 0
 
          while(self.stopping == False):
             time.sleep(5) #0.1)
-
+            clocktemp = int(open('/sys/class/thermal/thermal_zone0/temp').read()) / 1e3
+            if clocktemp != lastclocktemp:
+                self.mqttbroker.publish("Temperature",str(clocktemp))
+                lastclocktemp = clocktemp
 
 
       except (KeyboardInterrupt, SystemExit):
